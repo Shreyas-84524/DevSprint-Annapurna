@@ -1,10 +1,94 @@
 "use client";
+
+import { useState, useEffect } from "react";
 import { Shield, Leaf, Users, Heart, Package, CheckCircle, Activity } from "lucide-react";
-import { useQuery } from "convex/react";
-import { api } from "../../../convex/_generated/api";
+import { createClient } from "@/lib/supabase";
 
 export default function ImpactPage() {
-  const liveStats = useQuery(api.liveUpdates.getDashboardStats);
+  const supabase = createClient();
+  const [stats, setStats] = useState<any>({
+    foodDonationsCount: 0,
+    volunteersCount: 0,
+    totalMonetaryDonations: 0,
+    foodDeliveredCount: 0,
+    recentFoodDonations: []
+  });
+
+  const fetchStats = async () => {
+    try {
+      // 1. Food donations count
+      const { count: donCount } = await supabase
+        .from("food_donations")
+        .select("*", { count: "exact", head: true });
+
+      // 2. Volunteers count
+      const { count: volCount } = await supabase
+        .from("users")
+        .select("*", { count: "exact", head: true })
+        .eq("role", "volunteer");
+
+      // 3. Monetary donations sum
+      const { data: monData } = await supabase
+        .from("monetary_donations")
+        .select("amount");
+      const totalMon = monData ? monData.reduce((sum, current) => sum + Number(current.amount), 0) : 0;
+
+      // 4. Food delivered count
+      const { count: delCount } = await supabase
+        .from("food_donations")
+        .select("*", { count: "exact", head: true })
+        .in("status", ["delivered", "donated_to_animals"]);
+
+      // 5. Recent food donations
+      const { data: recentDonations } = await supabase
+        .from("food_donations")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(5);
+
+      setStats({
+        foodDonationsCount: donCount || 0,
+        volunteersCount: volCount || 0,
+        totalMonetaryDonations: totalMon || 0,
+        foodDeliveredCount: delCount || 0,
+        recentFoodDonations: recentDonations || []
+      });
+    } catch (error) {
+      console.error("Error fetching impact statistics:", error);
+    }
+  };
+
+  useEffect(() => {
+    fetchStats();
+
+    // Subscribe to DB changes for real-time counters
+    const donChannel = supabase
+      .channel("impact-donations")
+      .on("postgres_changes", { event: "*", schema: "public", table: "food_donations" }, () => {
+        fetchStats();
+      })
+      .subscribe();
+
+    const monChannel = supabase
+      .channel("impact-monetary")
+      .on("postgres_changes", { event: "*", schema: "public", table: "monetary_donations" }, () => {
+        fetchStats();
+      })
+      .subscribe();
+
+    const usrChannel = supabase
+      .channel("impact-users")
+      .on("postgres_changes", { event: "*", schema: "public", table: "users" }, () => {
+        fetchStats();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(donChannel);
+      supabase.removeChannel(monChannel);
+      supabase.removeChannel(usrChannel);
+    };
+  }, [supabase]);
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-16 sm:px-6 lg:px-8">
@@ -23,7 +107,7 @@ export default function ImpactPage() {
           </div>
           <p className="text-gray-500 text-sm font-bold uppercase tracking-wider mb-1">Food Donated</p>
           <h2 className="text-4xl font-black text-brand-charcoal">
-            {liveStats?.foodDonationsCount ?? "..."}
+            {stats.foodDonationsCount}
           </h2>
         </div>
 
@@ -33,7 +117,7 @@ export default function ImpactPage() {
           </div>
           <p className="text-gray-500 text-sm font-bold uppercase tracking-wider mb-1">Live Volunteers</p>
           <h2 className="text-4xl font-black text-brand-charcoal">
-            {liveStats?.volunteersCount ?? "..."}
+            {stats.volunteersCount}
           </h2>
           <div className="mt-2 flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
@@ -47,7 +131,7 @@ export default function ImpactPage() {
           </div>
           <p className="text-gray-500 text-sm font-bold uppercase tracking-wider mb-1">Funds Raised</p>
           <h2 className="text-4xl font-black text-brand-charcoal">
-            ₹{liveStats?.totalMonetaryDonations ?? "..."}
+            ₹{stats.totalMonetaryDonations.toLocaleString()}
           </h2>
         </div>
 
@@ -57,7 +141,7 @@ export default function ImpactPage() {
           </div>
           <p className="text-gray-500 text-sm font-bold uppercase tracking-wider mb-1">Meals Delivered</p>
           <h2 className="text-4xl font-black text-brand-charcoal">
-            {liveStats?.foodDeliveredCount ?? "..."}
+            {stats.foodDeliveredCount}
           </h2>
         </div>
       </div>
@@ -104,14 +188,14 @@ export default function ImpactPage() {
             Live Global Feed
           </h3>
           <div className="space-y-4">
-            {liveStats?.recentFoodDonations.map((feed: any) => (
-              <div key={feed._id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 text-sm animate-in fade-in slide-in-from-bottom-2 duration-500">
-                <p className="font-bold text-brand-charcoal">{feed.donorName}</p>
+            {stats.recentFoodDonations.map((feed: any) => (
+              <div key={feed.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 text-sm animate-in fade-in slide-in-from-bottom-2 duration-500">
+                <p className="font-bold text-brand-charcoal">{feed.donor_name}</p>
                 <p className="text-gray-500">Donated {feed.quantity} of food</p>
                 <p className="text-[10px] text-gray-400 mt-2 uppercase tracking-tighter">Just now • {feed.location}</p>
               </div>
             ))}
-            {(!liveStats || liveStats.recentFoodDonations.length === 0) && (
+            {stats.recentFoodDonations.length === 0 && (
               <div className="text-center py-12 text-gray-400">
                 <p className="italic">Waiting for live donations...</p>
               </div>

@@ -1,11 +1,16 @@
 "use client";
 
-import React, { createContext, useContext, ReactNode } from "react";
-import { useQuery, useMutation } from "convex/react";
-import { api } from "../../convex/_generated/api";
-import { Id } from "../../convex/_generated/dataModel";
+import React, { createContext, useContext, ReactNode, useState, useEffect } from "react";
+import { createClient } from "@/lib/supabase";
 
-export type FoodStatus = "available" | "claimed" | "in_transit" | "delivered";
+export type FoodStatus = 
+  | "pending_pickup" 
+  | "pickup_assigned" 
+  | "at_warehouse" 
+  | "pending_delivery" 
+  | "delivery_assigned" 
+  | "delivered" 
+  | "donated_to_animals";
 
 export interface FoodItem {
   id: string;
@@ -17,45 +22,117 @@ export interface FoodItem {
   donorName: string;
   createdAt: Date;
   qualityPassed?: boolean;
+  donorType: "individual" | "restaurant" | "caterer";
+  foodType: "veg" | "non-veg";
+  etaMinutes?: number;
 }
 
 interface FoodContextType {
   foodItems: FoodItem[];
-  addFoodItem: (item: Omit<FoodItem, "id" | "status" | "createdAt">) => void;
-  updateFoodStatus: (id: string, status: FoodStatus) => void;
-  verifyQuality: (id: string, passed: boolean) => void;
+  addFoodItem: (item: any) => Promise<void>;
+  updateFoodStatus: (id: string, status: FoodStatus) => Promise<void>;
+  verifyQuality: (id: string, passed: boolean) => Promise<void>;
 }
 
 const FoodContext = createContext<FoodContextType | undefined>(undefined);
 
 export function FoodProvider({ children }: { children: ReactNode }) {
-  const convexFoodItems = useQuery(api.food.getFoodItems) || [];
-  const mutateAddFoodItem = useMutation(api.food.addFoodItem);
-  const mutateVerifyQuality = useMutation(api.food.verifyQuality);
+  const [foodItems, setFoodItems] = useState<FoodItem[]>([]);
+  const supabase = createClient();
 
-  const foodItems: FoodItem[] = convexFoodItems.map((item) => ({
-    id: item._id as string,
-    title: item.title,
-    description: item.description,
-    quantity: item.quantity,
-    location: item.location,
-    status: item.status as FoodStatus,
-    donorName: item.donorName,
-    createdAt: new Date(item._creationTime),
-    qualityPassed: item.qualityPassed,
-  }));
+  const fetchFoodItems = async () => {
+    const { data, error } = await supabase
+      .from("food_donations")
+      .select("*")
+      .order("created_at", { ascending: false });
 
-  const addFoodItem = (item: any) => {
-    mutateAddFoodItem(item);
+    if (error) {
+      console.error("Error fetching food items:", error);
+      return;
+    }
+
+    if (data) {
+      const mapped = data.map((item: any) => ({
+        id: item.id,
+        title: item.title,
+        description: item.description,
+        quantity: item.quantity,
+        location: item.location,
+        status: item.status as FoodStatus,
+        donorName: item.donor_name,
+        createdAt: new Date(item.created_at),
+        qualityPassed: item.quality_passed,
+        donorType: item.donor_type,
+        foodType: item.food_type,
+        etaMinutes: item.eta_minutes
+      }));
+      setFoodItems(mapped);
+    }
   };
 
-  const updateFoodStatus = (id: string, status: FoodStatus) => {
-    // Deprecated. We don't have this mutation anymore.
-    // mutateUpdateStatus({ id: id as Id<"foodListings">, status });
+  useEffect(() => {
+    fetchFoodItems();
+
+    // Subscribe to real-time changes
+    const channel = supabase
+      .channel("realtime-food-donations")
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "food_donations" },
+        () => {
+          fetchFoodItems();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
+
+  const addFoodItem = async (item: any) => {
+    const { data: { user } } = await supabase.auth.getUser();
+
+    const { error } = await supabase.from("food_donations").insert({
+      title: item.title,
+      description: item.description,
+      quantity: item.quantity,
+      location: item.location,
+      donor_name: item.donorName || "Anonymous",
+      donor_type: item.donorType || "individual",
+      food_type: item.foodType || "veg",
+      status: "pending_pickup",
+      donor_id: user?.id || null
+    });
+
+    if (error) {
+      console.error("Error adding food item:", error);
+      throw error;
+    }
   };
 
-  const verifyQuality = (id: string, passed: boolean) => {
-    mutateVerifyQuality({ id: id as Id<"foodListings">, passed });
+  const updateFoodStatus = async (id: string, status: FoodStatus) => {
+    const { error } = await supabase
+      .from("food_donations")
+      .update({ status })
+      .eq("id", id);
+
+    if (error) {
+      console.error("Error updating food status:", error);
+      throw error;
+    }
+  };
+
+  const verifyQuality = async (id: string, passed: boolean) => {
+    const { error } = await supabase
+      .from("food_donations")
+      .update({ quality_passed: passed })
+      .eq("id", id);
+
+    if (error) {
+      console.error("Error verifying food quality:", error);
+      throw error;
+    }
   };
 
   return (

@@ -14,10 +14,10 @@ export default function Navbar() {
 
   const links = [
     { name: "Home", href: "/" },
-    { name: "Donate Food", href: "/donor" },
-    { name: "Request Meal", href: "/beneficiary" },
+    { name: "Donate Food", href: "/dashboard/donor" },
+    { name: "Request Meal", href: "/dashboard/beneficiary" },
     { name: "Impact", href: "/impact" },
-    { name: "Volunteer Dashboard", href: "/volunteer/login" },
+    { name: "Volunteer Dashboard", href: "/login" },
   ];
 
   return (

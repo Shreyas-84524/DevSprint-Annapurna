@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
+import { MapContainer, TileLayer, Marker, Popup, Polyline } from "react-leaflet";
 import L from "leaflet";
 
 // Fix for default marker icons missing in Next.js/Leaflet integrations
@@ -14,15 +14,23 @@ const iconFix = () => {
   });
 };
 
-export default function MapView() {
+interface MapViewProps {
+  volunteerCoords?: [number, number];
+  pickupCoords?: [number, number];
+  deliveryCoords?: [number, number];
+}
+
+export default function MapView({ volunteerCoords, pickupCoords, deliveryCoords }: MapViewProps) {
   useEffect(() => {
     iconFix();
   }, []);
 
+  const defaultCenter: [number, number] = [19.0760, 72.8777];
+
   return (
     <div className="rounded-xl overflow-hidden shadow-md border border-gray-200">
       <MapContainer
-        center={[19.0760, 72.8777]}
+        center={volunteerCoords || pickupCoords || defaultCenter}
         zoom={13}
         style={{ height: "400px", width: "100%", zIndex: 0 }}
       >
@@ -30,9 +38,31 @@ export default function MapView() {
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
-        <Marker position={[19.0760, 72.8777]}>
-          <Popup>Volunteer Location (Mumbai)</Popup>
-        </Marker>
+        
+        {volunteerCoords && (
+          <Marker position={volunteerCoords}>
+            <Popup>Volunteer Location</Popup>
+          </Marker>
+        )}
+
+        {pickupCoords && (
+          <Marker position={pickupCoords}>
+            <Popup>Pickup Location</Popup>
+          </Marker>
+        )}
+
+        {deliveryCoords && (
+          <Marker position={deliveryCoords}>
+            <Popup>Delivery Destination</Popup>
+          </Marker>
+        )}
+
+        {pickupCoords && deliveryCoords && (
+          <Polyline 
+            positions={[pickupCoords, deliveryCoords]} 
+            pathOptions={{ color: '#EAB308', weight: 4, dashArray: '5, 10' }} 
+          />
+        )}
       </MapContainer>
     </div>
   );

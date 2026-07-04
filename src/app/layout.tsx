@@ -4,7 +4,6 @@ import "./globals.css";
 import Navbar from "@/components/layout/Navbar";
 import Footer from "@/components/layout/Footer";
 import { FoodProvider } from "@/context/FoodContext";
-import ConvexClientProvider from "./ConvexClientProvider";
 import 'leaflet/dist/leaflet.css'
 
 const geistSans = Geist({
@@ -33,13 +32,11 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col bg-brand-slate text-brand-charcoal">
-        <ConvexClientProvider>
-          <Navbar />
-          <main className="flex-grow">
-            <FoodProvider>{children}</FoodProvider>
-          </main>
-          <Footer />
-        </ConvexClientProvider>
+        <Navbar />
+        <main className="flex-grow">
+          <FoodProvider>{children}</FoodProvider>
+        </main>
+        <Footer />
       </body>
     </html>
   );

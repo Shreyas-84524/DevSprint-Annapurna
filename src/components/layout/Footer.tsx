@@ -31,17 +31,17 @@ export default function Footer() {
             <h3 className="text-brand-white font-semibold mb-4">Platform</h3>
             <ul className="space-y-2 text-sm">
               <li>
-                <Link href="/donor" className="hover:text-brand-gold transition-colors">
+                <Link href="/dashboard/donor" className="hover:text-brand-gold transition-colors">
                   Donate Food
                 </Link>
               </li>
               <li>
-                <Link href="/beneficiary" className="hover:text-brand-gold transition-colors">
+                <Link href="/dashboard/beneficiary" className="hover:text-brand-gold transition-colors">
                   Request a Meal
                 </Link>
               </li>
               <li>
-                <Link href="/volunteer" className="hover:text-brand-gold transition-colors">
+                <Link href="/dashboard/volunteer" className="hover:text-brand-gold transition-colors">
                   Volunteer
                 </Link>
               </li>

@@ -1,36 +1,15 @@
 import { NextResponse } from 'next/server';
-import Stripe from 'stripe';
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2023-10-16' as any,
-});
 
 export async function POST(req: Request) {
   try {
     const { amount, title } = await req.json();
     const origin = req.headers.get('origin') || 'http://localhost:3000';
 
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
-      line_items: [
-        {
-          price_data: {
-            currency: 'inr',
-            product_data: {
-              name: title,
-              description: 'Donation to Annapurna Logistics Platform',
-            },
-            unit_amount: amount * 100, // Stripe expects amount in paise
-          },
-          quantity: 1,
-        },
-      ],
-      mode: 'payment',
-      success_url: `${origin}/donate?success=true`,
-      cancel_url: `${origin}/donate?canceled=true`,
-    });
+    // Mock Razorpay order checkout redirect URL
+    const paymentId = 'pay_' + Math.random().toString(36).substring(2, 11);
+    const mockSessionUrl = `${origin}/donate?success=true&amount=${amount}&title=${encodeURIComponent(title)}&payment_id=${paymentId}`;
 
-    return NextResponse.json({ url: session.url });
+    return NextResponse.json({ url: mockSessionUrl });
   } catch (err: any) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
