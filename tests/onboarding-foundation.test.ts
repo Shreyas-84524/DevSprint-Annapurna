@@ -1,0 +1,499 @@
+import { describe, it, beforeEach } from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  createCanonicalProfile,
+  getCurrentUserProjection,
+  OnboardingError,
+} from '../src/server/onboarding';
+import {
+  initiatePhoneVerification,
+  confirmPhoneVerification,
+  resetVerificationStores,
+} from '../src/server/verification';
+import { POST as adminBootstrapHandler } from '../src/app/api/admin/bootstrap/route';
+
+// Mock in-memory Supabase database for isolated unit testing
+class MockSupabaseDB {
+  public profiles = new Map<string, any>();
+  public savedLocations = new Map<string, any>();
+  public volunteerPreferences = new Map<string, any>();
+
+  from = (table: string) => {
+    return {
+      select: () => {
+        const filters: Record<string, any> = {};
+        const query = {
+          eq: (col: string, val: any) => {
+            filters[col] = val;
+            return query;
+          },
+          maybeSingle: async () => {
+            if (table === 'profiles') {
+              const p = this.profiles.get(filters['id']);
+              return { data: p || null, error: null };
+            }
+            if (table === 'saved_locations') {
+              const locs = Array.from(this.savedLocations.values()).filter((l) => {
+                for (const [k, v] of Object.entries(filters)) {
+                  if (l[k] !== v) return false;
+                }
+                return true;
+              });
+              return { data: locs[0] || null, error: null };
+            }
+            if (table === 'volunteer_preferences') {
+              const pref = this.volunteerPreferences.get(filters['user_id']);
+              return { data: pref || null, error: null };
+            }
+            return { data: null, error: null };
+          },
+          single: async () => {
+            const res = await query.maybeSingle();
+            if (!res.data) return { data: null, error: { message: 'Not found' } };
+            return res;
+          },
+        };
+        return query;
+      },
+      insert: (row: any) => {
+        return {
+          select: () => {
+            return {
+              single: async () => {
+                if (table === 'profiles') {
+                  this.profiles.set(row.id, {
+                    ...row,
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                  });
+                  return { data: this.profiles.get(row.id), error: null };
+                }
+                if (table === 'saved_locations') {
+                  const id = 'loc_' + Math.random().toString(36).substring(2);
+                  const saved = {
+                    ...row,
+                    id,
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                  };
+                  this.savedLocations.set(id, saved);
+                  return { data: saved, error: null };
+                }
+                if (table === 'volunteer_preferences') {
+                  this.volunteerPreferences.set(row.user_id, {
+                    ...row,
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString(),
+                  });
+                  return { data: this.volunteerPreferences.get(row.user_id), error: null };
+                }
+                return { data: row, error: null };
+              },
+            };
+          },
+        };
+      },
+      upsert: (row: any) => {
+        return {
+          then: (resolve: any) => {
+            if (table === 'profiles') {
+              const existing = this.profiles.get(row.id) || {};
+              this.profiles.set(row.id, { ...existing, ...row });
+            }
+            return resolve({ data: null, error: null });
+          },
+        };
+      },
+    };
+  };
+}
+
+describe('Annapurna Phase 2 — Onboarding & Foundation Suite', () => {
+  let mockDb: MockSupabaseDB;
+
+  beforeEach(() => {
+    mockDb = new MockSupabaseDB();
+    resetVerificationStores();
+  });
+
+  describe('1. Canonical Role Creation & Constraints', () => {
+    it('creates a donor profile requiring OTP verification', async () => {
+      const res = await createCanonicalProfile(
+        'user_donor_1',
+        'donor@annapurna.test',
+        {
+          displayName: 'Aarav Patel',
+          role: 'donor',
+          location: {
+            label: 'Home Kitchen',
+            address: 'Bandra West, Mumbai',
+            latitude: 19.0596,
+            longitude: 72.8295,
+          },
+        },
+        mockDb
+      );
+
+      assert.equal(res.profile.displayName, 'Aarav Patel');
+      assert.equal(res.profile.role, 'donor');
+      assert.equal(res.profile.isVerified, false, 'Donor must require OTP verification');
+      assert.equal(res.dashboardRoute, '/onboarding/verify');
+      assert.equal(res.location?.label, 'Home Kitchen');
+      assert.equal(res.location?.latitude, 19.0596);
+    });
+
+    it('creates a requester profile requiring OTP verification', async () => {
+      const res = await createCanonicalProfile(
+        'user_req_1',
+        'requester@annapurna.test',
+        {
+          displayName: 'Community Shelter',
+          role: 'requester',
+          location: {
+            label: 'Shelter Hub',
+            address: 'Dadar, Mumbai',
+            latitude: 19.0178,
+            longitude: 72.8478,
+          },
+        },
+        mockDb
+      );
+
+      assert.equal(res.profile.displayName, 'Community Shelter');
+      assert.equal(res.profile.role, 'requester');
+      assert.equal(res.profile.isVerified, false, 'Requester must require OTP verification');
+      assert.equal(res.dashboardRoute, '/onboarding/verify');
+    });
+
+    it('creates a volunteer profile without requiring OTP verification', async () => {
+      const res = await createCanonicalProfile(
+        'user_vol_1',
+        'volunteer@annapurna.test',
+        {
+          displayName: 'Vikram Singh',
+          role: 'volunteer',
+          volunteerPreferences: {
+            vehicleType: 'motorcycle',
+            maxDistanceKm: 15,
+          },
+        },
+        mockDb
+      );
+
+      assert.equal(res.profile.displayName, 'Vikram Singh');
+      assert.equal(res.profile.role, 'volunteer');
+      assert.equal(res.profile.isVerified, true, 'Volunteer must be verified immediately without OTP');
+      assert.equal(res.dashboardRoute, '/dashboard/volunteer');
+      assert.equal(res.volunteerPreferences?.vehicleType, 'motorcycle');
+      assert.equal(res.volunteerPreferences?.maxDistanceKm, 15);
+    });
+
+    it('rejects self-escalation to admin role (403 ADMIN_ESCALATION_FORBIDDEN)', async () => {
+      await assert.rejects(
+        async () => {
+          await createCanonicalProfile(
+            'user_bad_1',
+            'hacker@evil.test',
+            {
+              displayName: 'Root Administrator',
+              role: 'admin' as any,
+            },
+            mockDb
+          );
+        },
+        (err: OnboardingError) => {
+          assert.equal(err.code, 'ADMIN_ESCALATION_FORBIDDEN');
+          assert.equal(err.status, 403);
+          return true;
+        }
+      );
+    });
+
+    it('rejects invalid or unrecognized roles (400 INVALID_ROLE)', async () => {
+      await assert.rejects(
+        async () => {
+          await createCanonicalProfile(
+            'user_bad_2',
+            'test@test.com',
+            {
+              displayName: 'Valid Name',
+              role: 'super_beneficiary' as any,
+            },
+            mockDb
+          );
+        },
+        (err: OnboardingError) => {
+          assert.equal(err.code, 'INVALID_ROLE');
+          assert.equal(err.status, 400);
+          return true;
+        }
+      );
+    });
+
+    it('rejects invalid display names (400 INVALID_DISPLAY_NAME)', async () => {
+      await assert.rejects(
+        async () => {
+          await createCanonicalProfile(
+            'user_bad_3',
+            'test@test.com',
+            {
+              displayName: 'X', // only 1 char
+              role: 'donor',
+            },
+            mockDb
+          );
+        },
+        (err: OnboardingError) => {
+          assert.equal(err.code, 'INVALID_DISPLAY_NAME');
+          assert.equal(err.status, 400);
+          return true;
+        }
+      );
+    });
+
+    it('prevents re-onboarding / duplicate profile creation (409 PROFILE_ALREADY_EXISTS)', async () => {
+      await createCanonicalProfile(
+        'user_duplicate',
+        'dup@test.com',
+        {
+          displayName: 'First Onboarding',
+          role: 'volunteer',
+        },
+        mockDb
+      );
+
+      await assert.rejects(
+        async () => {
+          await createCanonicalProfile(
+            'user_duplicate',
+            'dup@test.com',
+            {
+              displayName: 'Second Attempt',
+              role: 'donor',
+            },
+            mockDb
+          );
+        },
+        (err: OnboardingError) => {
+          assert.equal(err.code, 'PROFILE_ALREADY_EXISTS');
+          assert.equal(err.status, 409);
+          return true;
+        }
+      );
+    });
+  });
+
+  describe('2. User State Projections (GET /api/me) & Dashboard Routing', () => {
+    it('projects un-onboarded user to /onboarding', async () => {
+      const projection = await getCurrentUserProjection('new_user_123', 'new@annapurna.test', mockDb);
+      assert.equal(projection.onboardingComplete, false);
+      assert.equal(projection.role, null);
+      assert.equal(projection.dashboardRoute, '/onboarding');
+    });
+
+    it('projects unverified donor to /onboarding/verify', async () => {
+      mockDb.profiles.set('donor_unverified', {
+        id: 'donor_unverified',
+        display_name: 'Pooja',
+        role: 'donor',
+        is_verified: false,
+      });
+
+      const projection = await getCurrentUserProjection('donor_unverified', 'pooja@test.com', mockDb);
+      assert.equal(projection.onboardingComplete, false);
+      assert.equal(projection.dashboardRoute, '/onboarding/verify');
+    });
+
+    it('projects verified donor to /dashboard/donor', async () => {
+      mockDb.profiles.set('donor_verified', {
+        id: 'donor_verified',
+        display_name: 'Pooja Verified',
+        role: 'donor',
+        is_verified: true,
+      });
+
+      const projection = await getCurrentUserProjection('donor_verified', 'pooja@test.com', mockDb);
+      assert.equal(projection.onboardingComplete, true);
+      assert.equal(projection.dashboardRoute, '/dashboard/donor');
+    });
+
+    it('projects verified requester to /dashboard/beneficiary', async () => {
+      mockDb.profiles.set('req_verified', {
+        id: 'req_verified',
+        display_name: 'Shelter Coordinator',
+        role: 'requester',
+        is_verified: true,
+      });
+
+      const projection = await getCurrentUserProjection('req_verified', 'shelter@test.com', mockDb);
+      assert.equal(projection.onboardingComplete, true);
+      assert.equal(projection.dashboardRoute, '/dashboard/beneficiary');
+    });
+
+    it('projects volunteer immediately to /dashboard/volunteer', async () => {
+      mockDb.profiles.set('vol_active', {
+        id: 'vol_active',
+        display_name: 'Courier Volunteer',
+        role: 'volunteer',
+        is_verified: true,
+      });
+
+      const projection = await getCurrentUserProjection('vol_active', 'vol@test.com', mockDb);
+      assert.equal(projection.onboardingComplete, true);
+      assert.equal(projection.dashboardRoute, '/dashboard/volunteer');
+    });
+
+    it('projects admin directly to /admin', async () => {
+      mockDb.profiles.set('admin_user', {
+        id: 'admin_user',
+        display_name: 'Operations Admin',
+        role: 'admin',
+        is_verified: true,
+      });
+
+      const projection = await getCurrentUserProjection('admin_user', 'admin@annapurna.test', mockDb);
+      assert.equal(projection.onboardingComplete, true);
+      assert.equal(projection.dashboardRoute, '/admin');
+    });
+  });
+
+  describe('3. Admin Bootstrap Security Boundary', () => {
+    const REAL_SECRET = 'super_secret_bootstrap_key_32_chars_long';
+
+    it('returns 503 when admin bootstrap secret is not configured on server', async () => {
+      delete process.env.ADMIN_BOOTSTRAP_SECRET;
+
+      const req = new Request('http://localhost:3000/api/admin/bootstrap', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-bootstrap-secret': 'any_secret',
+        },
+        body: JSON.stringify({ targetUserId: 'user_target_1' }),
+      });
+
+      const res = await adminBootstrapHandler(req);
+      assert.equal(res.status, 503);
+      const json = await res.json();
+      assert.equal(json.error.code, 'BOOTSTRAP_NOT_CONFIGURED');
+    });
+
+    it('returns 401 when x-admin-bootstrap-secret header is omitted', async () => {
+      process.env.ADMIN_BOOTSTRAP_SECRET = REAL_SECRET;
+
+      const req = new Request('http://localhost:3000/api/admin/bootstrap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetUserId: 'user_target_1' }),
+      });
+
+      const res = await adminBootstrapHandler(req);
+      assert.equal(res.status, 401);
+      const json = await res.json();
+      assert.equal(json.error.code, 'UNAUTHORIZED');
+    });
+
+    it('returns 403 when wrong bootstrap secret is provided', async () => {
+      process.env.ADMIN_BOOTSTRAP_SECRET = REAL_SECRET;
+
+      const req = new Request('http://localhost:3000/api/admin/bootstrap', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-bootstrap-secret': 'wrong_secret_1234567890123456',
+        },
+        body: JSON.stringify({ targetUserId: 'user_target_1' }),
+      });
+
+      const res = await adminBootstrapHandler(req);
+      assert.equal(res.status, 403);
+      const json = await res.json();
+      assert.equal(json.error.code, 'FORBIDDEN');
+    });
+  });
+
+  describe('4. Full Onboarding & OTP Verification Workflow', () => {
+    it('executes donor creation followed by Swift OTP verification flow', async () => {
+      // 1. Create donor profile
+      const onboardRes = await createCanonicalProfile(
+        'user_lifecycle_1',
+        'donor@test.com',
+        {
+          displayName: 'Community Donor',
+          role: 'donor',
+        },
+        mockDb
+      );
+      assert.equal(onboardRes.profile.isVerified, false);
+
+      // 2. Mock Swift fetch responses
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = async (url: any) => {
+        const urlStr = url.toString();
+        if (urlStr.includes('/api/v1/otp/send')) {
+          return new Response(
+            JSON.stringify({
+              request_id: 'req_test_123',
+              phone: '+919876543210',
+              status: 'QUEUED',
+              expires_at: new Date(Date.now() + 600000).toISOString(),
+              resend_after: 30,
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+        if (urlStr.includes('/api/v1/otp/verify')) {
+          return new Response(
+            JSON.stringify({
+              verified: true,
+              phone: '+919876543210',
+              verified_at: new Date().toISOString(),
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          );
+        }
+        return new Response('Not found', { status: 404 });
+      };
+
+      try {
+        const MOCK_CONFIG = {
+          baseUrl: 'https://mock-swift.local',
+          projectKey: 'test_key',
+        };
+
+        const sendResult = await initiatePhoneVerification({
+          userId: 'user_lifecycle_1',
+          phone: '+919876543210',
+          customConfig: MOCK_CONFIG,
+        });
+
+        assert.equal(sendResult.status, 'QUEUED');
+        assert.ok(sendResult.requestId);
+
+        // 3. Complete phone verification
+        const verifyResult = await confirmPhoneVerification({
+          userId: 'user_lifecycle_1',
+          otp: '123456',
+          customConfig: MOCK_CONFIG,
+        });
+
+        assert.equal(verifyResult.verified, true);
+        assert.equal(verifyResult.phone, '+919876543210');
+
+        // 4. Update profile in database
+        const profile = mockDb.profiles.get('user_lifecycle_1');
+        profile.is_verified = true;
+        profile.phone = verifyResult.phone;
+        profile.verified_at = verifyResult.verifiedAt;
+
+        // 5. Query /api/me projection
+        const projection = await getCurrentUserProjection('user_lifecycle_1', 'donor@test.com', mockDb);
+        assert.equal(projection.isVerified, true);
+        assert.equal(projection.onboardingComplete, true);
+        assert.equal(projection.dashboardRoute, '/dashboard/donor');
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+  });
+});

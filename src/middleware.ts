@@ -46,11 +46,70 @@ export async function middleware(request: NextRequest) {
     path.startsWith("/register");
 
   if (isProtectedRoute && !isAuthRoute && !user) {
-    const loginUrl = "/login";
-    
     const url = request.nextUrl.clone();
-    url.pathname = loginUrl;
+    url.pathname = "/login";
     return NextResponse.redirect(url);
+  }
+
+  // Role-based protection for authenticated users
+  if (user && (isProtectedRoute || path === "/onboarding")) {
+    const { data: profile } = await supabase
+      .from("profiles")
+      .select("role, is_verified")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    // 1. If trying to access admin, strictly require role === 'admin'
+    if (path.startsWith("/admin")) {
+      if (!profile || profile.role !== "admin") {
+        const url = request.nextUrl.clone();
+        url.pathname = profile ? (
+          profile.role === "donor" ? "/dashboard/donor" :
+          profile.role === "requester" ? "/dashboard/beneficiary" :
+          profile.role === "volunteer" ? "/dashboard/volunteer" : "/login"
+        ) : "/onboarding";
+        return NextResponse.redirect(url);
+      }
+    }
+
+    // 2. If trying to access dashboards, enforce role match
+    if (path.startsWith("/dashboard")) {
+      if (!profile) {
+        const url = request.nextUrl.clone();
+        url.pathname = "/onboarding";
+        return NextResponse.redirect(url);
+      }
+
+      if (path.startsWith("/dashboard/donor") && profile.role !== "donor") {
+        const url = request.nextUrl.clone();
+        url.pathname = profile.role === "requester" ? "/dashboard/beneficiary" :
+          profile.role === "volunteer" ? "/dashboard/volunteer" : "/admin";
+        return NextResponse.redirect(url);
+      }
+
+      if (path.startsWith("/dashboard/beneficiary") && profile.role !== "requester") {
+        const url = request.nextUrl.clone();
+        url.pathname = profile.role === "donor" ? "/dashboard/donor" :
+          profile.role === "volunteer" ? "/dashboard/volunteer" : "/admin";
+        return NextResponse.redirect(url);
+      }
+
+      if (path.startsWith("/dashboard/volunteer") && profile.role !== "volunteer") {
+        const url = request.nextUrl.clone();
+        url.pathname = profile.role === "donor" ? "/dashboard/donor" :
+          profile.role === "requester" ? "/dashboard/beneficiary" : "/admin";
+        return NextResponse.redirect(url);
+      }
+    }
+
+    // 3. If already onboarded, redirect from /onboarding to dashboard
+    if (path === "/onboarding" && profile) {
+      const url = request.nextUrl.clone();
+      url.pathname = profile.role === "donor" ? "/dashboard/donor" :
+        profile.role === "requester" ? "/dashboard/beneficiary" :
+        profile.role === "volunteer" ? "/dashboard/volunteer" : "/admin";
+      return NextResponse.redirect(url);
+    }
   }
 
   return supabaseResponse;
