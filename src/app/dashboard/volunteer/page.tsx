@@ -1,7 +1,7 @@
 "use client";
 
 import { createClient } from "@/lib/supabase";
-import { getRouteBetweenAddresses } from "@/utils/ors";
+import { getRouteBetweenAddresses } from "@/lib/routing";
 import { motion, AnimatePresence } from "framer-motion";
 import { Navigation, ShieldCheck, MapPin, Package, CheckCircle2, AlertTriangle, Wallet, Clock } from "lucide-react";
 import { useState, useEffect } from "react";
