@@ -1,15 +1,17 @@
 # Annapurna Foundation — Surplus Food Redistribution Platform
 
-Annapurna Foundation is a high-fidelity web platform that coordinates food redistribution campaigns, manages volunteer logistics, accepts monetary donations, and connects partner NGOs to local soup kitchens and hunger relief projects.
+Annapurna is an unfinished food redistribution MVP that coordinates verified donors and requesters with authenticated delivery volunteers. The active plan is being rebuilt through the six-stage workflow under `docs/`.
 
 ---
 
 ## 🚀 Key Features
-* **Surplus Food Donation:** Donors can log food items, select preferred pickup dates/times, and track collection statuses.
-* **Volunteer Management:** Seamless driver onboarding, pickup-delivery task acceptance, Leaflet maps routing guidance, and automated travel mileage payouts.
-* **Monetary Donations:** Real-time online charity sponsorship using mocked Razorpay gateways.
-* **NGO & Beneficiary Coordination:** Coordinate local food distributions.
-* **Admin Command Center:** Manage blogs, FAQs, media galleries, events, user permissions, and audit logs.
+* **Food listings:** Verified donors publish time-sensitive food with a pickup location and optional image.
+* **Whole-listing claims:** Verified requesters discover nearby food and atomically claim one listing.
+* **Volunteer delivery:** Authenticated volunteers perform pickup QC, collection, tracking, handover, and delivery completion.
+* **Requester confirmation:** The requester explicitly confirms receipt.
+* **Retained CMS:** Useful blog, FAQ, gallery, event, and contact functionality will be reconnected after the core workflow.
+
+Payments, payouts, wallets, Aadhaar collection, tax receipts, NGO management, and manual volunteer approval are outside the active MVP even where legacy code still exists.
 
 ---
 
@@ -29,8 +31,8 @@ annapurna/
 ├── src/
 │   ├── app/                # Next.js App Router Pages
 │   │   ├── (auth)/         # User login & registration
-│   │   ├── (public)/       # Landing, About, Contact, FAQ, Blog, Donate
-│   │   ├── dashboard/      # Donor, Volunteer, and Beneficiary dashboards
+│   │   ├── (public)/       # Landing and retained public/CMS pages
+│   │   ├── dashboard/      # Donor, Volunteer, and legacy Beneficiary routes
 │   │   └── admin/          # Admin operations command center
 │   ├── components/         # Reusable React components
 │   │   ├── ui/             # Core UI components
@@ -48,11 +50,7 @@ annapurna/
 ## 🔧 Getting Started
 
 ### 1. Configure Credentials
-Copy the environment variables template:
-```bash
-cp .env.example .env.local
-```
-Fill in the variables in `.env.local`.
+Environment names and service setup are being re-established in Stages 2 and 6. Do not infer a working backend from placeholder values and do not put secrets in committed files.
 
 ### 2. Install & Start
 ```bash
@@ -64,5 +62,9 @@ Navigate to [http://localhost:3000](http://localhost:3000) to view the applicati
 ---
 
 ## 📖 Documentation
-* [SETUP.md](SETUP.md) — Detailed environment setup, database migrations, and integration parameters.
-* [DEPLOYMENT.md](DEPLOYMENT.md) — Production release checklists and Vercel hosting instructions.
+* [MVP](docs/product/MVP.md) and [PRD](docs/product/PRD.md) — authoritative product scope.
+* [Architecture](docs/architecture/ARCHITECTURE.md), [data model](docs/architecture/DATA_MODEL.md), [API contracts](docs/architecture/API_CONTRACTS.md), and [ownership](docs/architecture/FILE_STRUCTURE.md).
+* [Six stages](docs/orchestration/STAGES.md), [working agreement](docs/orchestration/WORKING_AGREEMENT.md), and [current status](docs/orchestration/STATUS.md).
+* [Vercel plan](docs/deployment/VERCEL.md) and [Stage 1 audit](docs/audits/STAGE_1_BASELINE.md).
+
+`audit-reports/` is preserved historical evidence and may cite superseded legacy documents. It is not the active product plan.
