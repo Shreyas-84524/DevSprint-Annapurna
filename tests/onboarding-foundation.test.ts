@@ -93,6 +93,19 @@ class MockSupabaseDB {
           },
         };
       },
+      delete: () => {
+        return {
+          eq: (col: string, val: any) => {
+            if (table === 'profiles') this.profiles.delete(val);
+            if (table === 'saved_locations') {
+              for (const [k, v] of this.savedLocations.entries()) {
+                if (v.user_id === val) this.savedLocations.delete(k);
+              }
+            }
+            return { error: null };
+          },
+        };
+      },
       upsert: (row: any) => {
         return {
           then: (resolve: any) => {
@@ -137,7 +150,7 @@ describe('Annapurna Phase 2 — Onboarding & Foundation Suite', () => {
       assert.equal(res.profile.displayName, 'Aarav Patel');
       assert.equal(res.profile.role, 'donor');
       assert.equal(res.profile.isVerified, false, 'Donor must require OTP verification');
-      assert.equal(res.dashboardRoute, '/onboarding/verify');
+      assert.equal(res.dashboardRoute, '/onboarding');
       assert.equal(res.location?.label, 'Home Kitchen');
       assert.equal(res.location?.latitude, 19.0596);
     });
@@ -162,7 +175,7 @@ describe('Annapurna Phase 2 — Onboarding & Foundation Suite', () => {
       assert.equal(res.profile.displayName, 'Community Shelter');
       assert.equal(res.profile.role, 'requester');
       assert.equal(res.profile.isVerified, false, 'Requester must require OTP verification');
-      assert.equal(res.dashboardRoute, '/onboarding/verify');
+      assert.equal(res.dashboardRoute, '/onboarding');
     });
 
     it('creates a volunteer profile without requiring OTP verification', async () => {
@@ -172,6 +185,11 @@ describe('Annapurna Phase 2 — Onboarding & Foundation Suite', () => {
         {
           displayName: 'Vikram Singh',
           role: 'volunteer',
+          location: {
+            label: 'Distribution Point',
+            latitude: 19.076,
+            longitude: 72.8777,
+          },
           volunteerPreferences: {
             vehicleType: 'motorcycle',
             maxDistanceKm: 15,
@@ -182,7 +200,7 @@ describe('Annapurna Phase 2 — Onboarding & Foundation Suite', () => {
 
       assert.equal(res.profile.displayName, 'Vikram Singh');
       assert.equal(res.profile.role, 'volunteer');
-      assert.equal(res.profile.isVerified, true, 'Volunteer must be verified immediately without OTP');
+      assert.equal(res.profile.isVerified, true, 'Volunteers are verified upon onboarding');
       assert.equal(res.dashboardRoute, '/dashboard/volunteer');
       assert.equal(res.volunteerPreferences?.vehicleType, 'motorcycle');
       assert.equal(res.volunteerPreferences?.maxDistanceKm, 15);
@@ -192,11 +210,16 @@ describe('Annapurna Phase 2 — Onboarding & Foundation Suite', () => {
       await assert.rejects(
         async () => {
           await createCanonicalProfile(
-            'user_bad_1',
-            'hacker@evil.test',
+            'user_bad_actor',
+            'attacker@evil.com',
             {
-              displayName: 'Root Administrator',
+              displayName: 'Fake Admin',
               role: 'admin' as any,
+              location: {
+                label: 'Base',
+                latitude: 19.0,
+                longitude: 72.8,
+              },
             },
             mockDb
           );
@@ -213,11 +236,16 @@ describe('Annapurna Phase 2 — Onboarding & Foundation Suite', () => {
       await assert.rejects(
         async () => {
           await createCanonicalProfile(
-            'user_bad_2',
-            'test@test.com',
+            'user_invalid_role',
+            'invalid@test.com',
             {
-              displayName: 'Valid Name',
-              role: 'super_beneficiary' as any,
+              displayName: 'Invalid User',
+              role: 'superman' as any,
+              location: {
+                label: 'Base',
+                latitude: 19.0,
+                longitude: 72.8,
+              },
             },
             mockDb
           );
@@ -230,15 +258,41 @@ describe('Annapurna Phase 2 — Onboarding & Foundation Suite', () => {
       );
     });
 
+    it('rejects missing saved location on onboarding (400 MISSING_LOCATION)', async () => {
+      await assert.rejects(
+        async () => {
+          await createCanonicalProfile(
+            'user_no_loc',
+            'no_loc@test.com',
+            {
+              displayName: 'No Location User',
+              role: 'donor',
+            },
+            mockDb
+          );
+        },
+        (err: OnboardingError) => {
+          assert.equal(err.code, 'MISSING_LOCATION');
+          assert.equal(err.status, 400);
+          return true;
+        }
+      );
+    });
+
     it('rejects invalid display names (400 INVALID_DISPLAY_NAME)', async () => {
       await assert.rejects(
         async () => {
           await createCanonicalProfile(
-            'user_bad_3',
-            'test@test.com',
+            'user_short_name',
+            'short@test.com',
             {
-              displayName: 'X', // only 1 char
+              displayName: 'X',
               role: 'donor',
+              location: {
+                label: 'Base',
+                latitude: 19.0,
+                longitude: 72.8,
+              },
             },
             mockDb
           );
@@ -258,6 +312,11 @@ describe('Annapurna Phase 2 — Onboarding & Foundation Suite', () => {
         {
           displayName: 'First Onboarding',
           role: 'volunteer',
+          location: {
+            label: 'Base',
+            latitude: 19.0,
+            longitude: 72.8,
+          },
         },
         mockDb
       );
@@ -270,6 +329,11 @@ describe('Annapurna Phase 2 — Onboarding & Foundation Suite', () => {
             {
               displayName: 'Second Attempt',
               role: 'donor',
+              location: {
+                label: 'Base',
+                latitude: 19.0,
+                longitude: 72.8,
+              },
             },
             mockDb
           );
@@ -285,23 +349,23 @@ describe('Annapurna Phase 2 — Onboarding & Foundation Suite', () => {
 
   describe('2. User State Projections (GET /api/me) & Dashboard Routing', () => {
     it('projects un-onboarded user to /onboarding', async () => {
-      const projection = await getCurrentUserProjection('new_user_123', 'new@annapurna.test', mockDb);
+      const projection = await getCurrentUserProjection('user_fresh', 'fresh@test.com', mockDb);
       assert.equal(projection.onboardingComplete, false);
-      assert.equal(projection.role, null);
       assert.equal(projection.dashboardRoute, '/onboarding');
+      assert.equal(projection.role, null);
     });
 
-    it('projects unverified donor to /onboarding/verify', async () => {
+    it('projects unverified donor to /onboarding', async () => {
       mockDb.profiles.set('donor_unverified', {
         id: 'donor_unverified',
-        display_name: 'Pooja',
+        display_name: 'Pooja Donor',
         role: 'donor',
         is_verified: false,
       });
 
       const projection = await getCurrentUserProjection('donor_unverified', 'pooja@test.com', mockDb);
       assert.equal(projection.onboardingComplete, false);
-      assert.equal(projection.dashboardRoute, '/onboarding/verify');
+      assert.equal(projection.dashboardRoute, '/onboarding');
     });
 
     it('projects verified donor to /dashboard/donor', async () => {
@@ -331,14 +395,14 @@ describe('Annapurna Phase 2 — Onboarding & Foundation Suite', () => {
     });
 
     it('projects volunteer immediately to /dashboard/volunteer', async () => {
-      mockDb.profiles.set('vol_active', {
-        id: 'vol_active',
-        display_name: 'Courier Volunteer',
+      mockDb.profiles.set('vol_ready', {
+        id: 'vol_ready',
+        display_name: 'Volunteer Amit',
         role: 'volunteer',
         is_verified: true,
       });
 
-      const projection = await getCurrentUserProjection('vol_active', 'vol@test.com', mockDb);
+      const projection = await getCurrentUserProjection('vol_ready', 'amit@test.com', mockDb);
       assert.equal(projection.onboardingComplete, true);
       assert.equal(projection.dashboardRoute, '/dashboard/volunteer');
     });
@@ -346,7 +410,7 @@ describe('Annapurna Phase 2 — Onboarding & Foundation Suite', () => {
     it('projects admin directly to /admin', async () => {
       mockDb.profiles.set('admin_user', {
         id: 'admin_user',
-        display_name: 'Operations Admin',
+        display_name: 'Admin Boss',
         role: 'admin',
         is_verified: true,
       });
@@ -357,19 +421,19 @@ describe('Annapurna Phase 2 — Onboarding & Foundation Suite', () => {
     });
   });
 
-  describe('3. Admin Bootstrap Security Boundary', () => {
-    const REAL_SECRET = 'super_secret_bootstrap_key_32_chars_long';
+  describe('3. Admin Bootstrap Security Boundary & One-Time Lockout', () => {
+    const validSecret = 'super_secret_admin_bootstrap_key_2026';
+    const validUUID = 'a1b2c3d4-e5f6-4a1b-8c2d-3e4f5a6b7c8d';
+
+    beforeEach(() => {
+      delete process.env.ADMIN_BOOTSTRAP_SECRET;
+    });
 
     it('returns 503 when admin bootstrap secret is not configured on server', async () => {
-      delete process.env.ADMIN_BOOTSTRAP_SECRET;
-
       const req = new Request('http://localhost:3000/api/admin/bootstrap', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-admin-bootstrap-secret': 'any_secret',
-        },
-        body: JSON.stringify({ targetUserId: 'user_target_1' }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ targetUserId: validUUID }),
       });
 
       const res = await adminBootstrapHandler(req);
@@ -379,12 +443,12 @@ describe('Annapurna Phase 2 — Onboarding & Foundation Suite', () => {
     });
 
     it('returns 401 when x-admin-bootstrap-secret header is omitted', async () => {
-      process.env.ADMIN_BOOTSTRAP_SECRET = REAL_SECRET;
+      process.env.ADMIN_BOOTSTRAP_SECRET = validSecret;
 
       const req = new Request('http://localhost:3000/api/admin/bootstrap', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ targetUserId: 'user_target_1' }),
+        body: JSON.stringify({ targetUserId: validUUID }),
       });
 
       const res = await adminBootstrapHandler(req);
@@ -394,15 +458,15 @@ describe('Annapurna Phase 2 — Onboarding & Foundation Suite', () => {
     });
 
     it('returns 403 when wrong bootstrap secret is provided', async () => {
-      process.env.ADMIN_BOOTSTRAP_SECRET = REAL_SECRET;
+      process.env.ADMIN_BOOTSTRAP_SECRET = validSecret;
 
       const req = new Request('http://localhost:3000/api/admin/bootstrap', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-admin-bootstrap-secret': 'wrong_secret_1234567890123456',
+          'x-admin-bootstrap-secret': 'wrong_secret_attempt',
         },
-        body: JSON.stringify({ targetUserId: 'user_target_1' }),
+        body: JSON.stringify({ targetUserId: validUUID }),
       });
 
       const res = await adminBootstrapHandler(req);
@@ -410,17 +474,40 @@ describe('Annapurna Phase 2 — Onboarding & Foundation Suite', () => {
       const json = await res.json();
       assert.equal(json.error.code, 'FORBIDDEN');
     });
+
+    it('returns 400 when targetUserId is not a valid UUID', async () => {
+      process.env.ADMIN_BOOTSTRAP_SECRET = validSecret;
+
+      const req = new Request('http://localhost:3000/api/admin/bootstrap', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-bootstrap-secret': validSecret,
+        },
+        body: JSON.stringify({ targetUserId: 'not-a-valid-uuid' }),
+      });
+
+      const res = await adminBootstrapHandler(req);
+      assert.equal(res.status, 400);
+      const json = await res.json();
+      assert.equal(json.error.code, 'INVALID_TARGET_USER_ID');
+    });
   });
 
   describe('4. Full Onboarding & OTP Verification Workflow', () => {
     it('executes donor creation followed by Swift OTP verification flow', async () => {
-      // 1. Create donor profile
+      // 1. Create donor profile with required location
       const onboardRes = await createCanonicalProfile(
         'user_lifecycle_1',
         'donor@test.com',
         {
           displayName: 'Community Donor',
           role: 'donor',
+          location: {
+            label: 'Central Kitchen',
+            latitude: 19.076,
+            longitude: 72.8777,
+          },
         },
         mockDb
       );
@@ -479,6 +566,7 @@ describe('Annapurna Phase 2 — Onboarding & Foundation Suite', () => {
 
         assert.equal(verifyResult.verified, true);
         assert.equal(verifyResult.phone, '+919876543210');
+        assert.equal(verifyResult.proofId, 'req_test_123'); // Swift requestId proof
 
         // 4. Update profile in database
         const profile = mockDb.profiles.get('user_lifecycle_1');
