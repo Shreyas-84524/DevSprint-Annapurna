@@ -56,38 +56,12 @@ export async function POST(req: Request) {
     }
 
     // 3. Confirm verification code against server-tracked pending session
+    // Authoritatively verifies Swift OTP, marks attempt consumed, records proof, and updates profile.
     const result = await confirmPhoneVerification({
       userId: user.id,
       otp: code,
       requestId: typeof requestId === 'string' ? requestId : undefined,
     });
-
-    // 4. Update profile in database if possible
-    try {
-      const { createClient: createServerSupabaseClient } = await import('@/lib/supabase-server');
-      const supabase = await createServerSupabaseClient();
-      await supabase
-        .from('profiles')
-        .update({
-          is_verified: true,
-          phone: result.phone,
-          verified_at: result.verifiedAt,
-        })
-        .eq('id', user.id);
-
-      await supabase
-        .from('verification_records')
-        .upsert({
-          user_id: user.id,
-          phone: result.phone,
-          proof_id: result.phone,
-          status: 'verified',
-          verified_at: result.verifiedAt,
-        });
-    } catch (dbErr) {
-      // In-memory verification already succeeded; database error logged non-fatally
-      console.error('Non-fatal error updating profile verification in DB:', dbErr);
-    }
 
     return NextResponse.json(
       {
@@ -95,6 +69,7 @@ export async function POST(req: Request) {
           verified: result.verified,
           verifiedAt: result.verifiedAt,
           phone: result.phone,
+          proofId: result.proofId,
         },
         error: null,
       },
@@ -108,7 +83,6 @@ export async function POST(req: Request) {
           error: {
             code: err.code,
             message: err.message,
-            attemptsRemaining: err.attemptsRemaining,
             retryAfterSeconds: err.retryAfterSeconds,
           },
         },
@@ -116,12 +90,13 @@ export async function POST(req: Request) {
       );
     }
 
+    console.error('Unexpected error in verify-code route:', err);
     return NextResponse.json(
       {
         data: null,
         error: {
           code: 'INTERNAL_ERROR',
-          message: 'An unexpected error occurred during code verification.',
+          message: 'An unexpected internal error occurred while verifying the code.',
         },
       },
       { status: 500 }
