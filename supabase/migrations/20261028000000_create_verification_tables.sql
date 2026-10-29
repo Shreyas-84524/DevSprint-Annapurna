@@ -36,17 +36,17 @@ CREATE TABLE IF NOT EXISTS public.verification_attempts (
 );
 
 -- Indexes for verification attempts
-CREATE INDEX IF NOT EXISTS idx_verification_attempts_user_status 
+CREATE INDEX IF NOT EXISTS idx_verification_attempts_user_status
   ON public.verification_attempts(user_id, status);
 
-CREATE INDEX IF NOT EXISTS idx_verification_attempts_request_id 
+CREATE INDEX IF NOT EXISTS idx_verification_attempts_request_id
   ON public.verification_attempts(request_id);
 
-CREATE INDEX IF NOT EXISTS idx_verification_attempts_phone 
+CREATE INDEX IF NOT EXISTS idx_verification_attempts_phone
   ON public.verification_attempts(phone);
 
 -- Unique idempotency key per user send attempt
-CREATE UNIQUE INDEX IF NOT EXISTS idx_verification_attempts_user_idempotency 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_verification_attempts_user_idempotency
   ON public.verification_attempts(user_id, idempotency_key);
 
 -- 3. Enable Row Level Security (RLS)
