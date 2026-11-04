@@ -6,6 +6,7 @@
  */
 
 import { createClient as createServerSupabaseClient } from '@/lib/supabase-server';
+import { getServiceRoleClient } from '@/lib/supabase-admin';
 import {
   OnboardingProfileRequest,
   OnboardingProfileResponse,
@@ -39,7 +40,7 @@ export async function createCanonicalProfile(
   input: OnboardingProfileRequest,
   customSupabaseClient?: any
 ): Promise<OnboardingProfileResponse> {
-  const supabase = customSupabaseClient || (await createServerSupabaseClient());
+  const supabase = customSupabaseClient || getServiceRoleClient();
 
   // 1. Validate display name
   const trimmedName = input.displayName?.trim();
@@ -99,181 +100,74 @@ export async function createCanonicalProfile(
 
   const trimmedLabel = label?.trim() || 'Default Location';
 
-  // 4. Check for existing profile (prevent duplicates/re-onboarding)
-  const { data: existingProfile, error: checkError } = await supabase
-    .from('profiles')
-    .select('id, role')
-    .eq('id', userId)
-    .maybeSingle();
-
-  if (checkError && checkError.code !== 'PGRST116') {
-    console.error('Error checking existing profile:', checkError);
-  }
-
-  if (existingProfile) {
-    throw new OnboardingError(
-      'A profile has already been onboarded for this account.',
-      'PROFILE_ALREADY_EXISTS',
-      409
-    );
-  }
-
-  // 5. Determine verification status: Volunteers require no phone OTP verification
+  // 4. Determine verification status: Volunteers require no phone OTP verification
   const isVolunteer = input.role === 'volunteer';
   const isVerified = isVolunteer;
-  const verifiedAt = isVolunteer ? new Date().toISOString() : null;
 
-  // 6. Transactional creation: Attempt DB RPC complete_onboarding_tx first
+  // 5. Perform the entire write through one privileged database transaction.
   const vehicleType = input.volunteerPreferences?.vehicleType || 'motorcycle';
   const maxDistanceKm = input.volunteerPreferences?.maxDistanceKm || 10;
 
-  let txData: any = null;
-  let txError: any = null;
-  if (typeof supabase.rpc === 'function') {
-    const rpcResult = await supabase.rpc('complete_onboarding_tx', {
-      p_user_id: userId,
-      p_display_name: trimmedName,
-      p_role: input.role,
-      p_location_label: trimmedLabel,
-      p_address: address?.trim() || null,
-      p_latitude: latitude,
-      p_longitude: longitude,
-      p_vehicle_type: vehicleType,
-      p_max_distance_km: maxDistanceKm,
-    });
-    txData = rpcResult?.data;
-    txError = rpcResult?.error;
-  } else {
-    txError = { message: 'RPC not implemented on client' };
+  const { data: txData, error: txError } = await supabase.rpc('complete_onboarding_tx', {
+    p_user_id: userId,
+    p_display_name: trimmedName,
+    p_role: input.role,
+    p_location_label: trimmedLabel,
+    p_address: address?.trim() || null,
+    p_latitude: latitude,
+    p_longitude: longitude,
+    p_vehicle_type: vehicleType,
+    p_max_distance_km: maxDistanceKm,
+  });
+
+  if (txError || !txData) {
+    const message = txError?.message || '';
+    if (message.includes('PROFILE_ALREADY_EXISTS') || txError?.code === '23505') {
+      throw new OnboardingError(
+        'A profile has already been onboarded for this account.',
+        'PROFILE_ALREADY_EXISTS',
+        409
+      );
+    }
+
+    console.error('Transactional onboarding failed:', txError);
+    throw new OnboardingError(
+      'Failed to create the onboarding profile. No onboarding data was saved.',
+      'ONBOARDING_TRANSACTION_FAILED',
+      500
+    );
   }
 
-  let createdProfile: any = null;
+  const createdProfile = txData.profile;
   let savedLocation: SavedLocationDTO | null = null;
   let volPrefs: VolunteerPreferencesDTO | null = null;
 
-  if (!txError && txData) {
-    createdProfile = txData.profile;
-    if (txData.location) {
-      savedLocation = {
-        id: txData.location.id,
-        userId: txData.location.user_id,
-        label: txData.location.label,
-        address: txData.location.address,
-        latitude: Number(txData.location.latitude),
-        longitude: Number(txData.location.longitude),
-        isDefault: txData.location.is_default,
-        createdAt: txData.location.created_at,
-        updatedAt: txData.location.updated_at,
-      };
-    }
-    if (txData.volunteer_preferences) {
-      volPrefs = {
-        userId: txData.volunteer_preferences.user_id,
-        vehicleType: txData.volunteer_preferences.vehicle_type,
-        maxDistanceKm: Number(txData.volunteer_preferences.max_distance_km),
-        isAvailable: txData.volunteer_preferences.is_available,
-        createdAt: txData.volunteer_preferences.created_at,
-        updatedAt: txData.volunteer_preferences.updated_at,
-      };
-    }
-  } else {
-    // Compensating transactional fallback if RPC is unavailable
-    // A. Insert profile
-    const { data: newProfile, error: profileInsertError } = await supabase
-      .from('profiles')
-      .insert({
-        id: userId,
-        display_name: trimmedName,
-        role: input.role,
-        is_verified: isVerified,
-        verified_at: verifiedAt,
-      })
-      .select('*')
-      .single();
-
-    if (profileInsertError || !newProfile) {
-      console.error('Failed to insert profile:', profileInsertError);
-      throw new OnboardingError(
-        'Failed to create profile. Please verify your session and try again.',
-        'PROFILE_INSERT_FAILED',
-        500
-      );
-    }
-    createdProfile = newProfile;
-
-    // B. Insert required location with compensating rollback on failure
-    const { data: locData, error: locError } = await supabase
-      .from('saved_locations')
-      .insert({
-        user_id: userId,
-        label: trimmedLabel,
-        address: address?.trim() || null,
-        latitude,
-        longitude,
-        is_default: true,
-      })
-      .select('*')
-      .single();
-
-    if (locError || !locData) {
-      console.error('Failed to insert location, rolling back profile:', locError);
-      // Compensating deletion
-      await supabase.from('profiles').delete().eq('id', userId);
-      throw new OnboardingError(
-        'Failed to save required location. Onboarding was rolled back.',
-        'LOCATION_INSERT_FAILED',
-        500
-      );
-    }
-
+  if (txData.location) {
     savedLocation = {
-      id: locData.id,
-      userId: locData.user_id,
-      label: locData.label,
-      address: locData.address,
-      latitude: Number(locData.latitude),
-      longitude: Number(locData.longitude),
-      isDefault: locData.is_default,
-      createdAt: locData.created_at,
-      updatedAt: locData.updated_at,
+      id: txData.location.id,
+      userId: txData.location.user_id,
+      label: txData.location.label,
+      address: txData.location.address,
+      latitude: Number(txData.location.latitude),
+      longitude: Number(txData.location.longitude),
+      isDefault: txData.location.is_default,
+      createdAt: txData.location.created_at,
+      updatedAt: txData.location.updated_at,
     };
-
-    // C. Insert volunteer preferences if volunteer
-    if (isVolunteer) {
-      const { data: prefData, error: prefError } = await supabase
-        .from('volunteer_preferences')
-        .insert({
-          user_id: userId,
-          vehicle_type: vehicleType,
-          max_distance_km: maxDistanceKm,
-          is_available: true,
-        })
-        .select('*')
-        .single();
-
-      if (prefError || !prefData) {
-        console.error('Failed to insert volunteer preferences, rolling back:', prefError);
-        await supabase.from('saved_locations').delete().eq('user_id', userId);
-        await supabase.from('profiles').delete().eq('id', userId);
-        throw new OnboardingError(
-          'Failed to save volunteer preferences. Onboarding was rolled back.',
-          'PREFERENCES_INSERT_FAILED',
-          500
-        );
-      }
-
-      volPrefs = {
-        userId: prefData.user_id,
-        vehicleType: prefData.vehicle_type,
-        maxDistanceKm: Number(prefData.max_distance_km),
-        isAvailable: prefData.is_available,
-        createdAt: prefData.created_at,
-        updatedAt: prefData.updated_at,
-      };
-    }
   }
 
-  // 7. Determine destination dashboard route
+  if (txData.volunteer_preferences) {
+    volPrefs = {
+      userId: txData.volunteer_preferences.user_id,
+      vehicleType: txData.volunteer_preferences.vehicle_type,
+      maxDistanceKm: Number(txData.volunteer_preferences.max_distance_km),
+      isAvailable: txData.volunteer_preferences.is_available,
+      createdAt: txData.volunteer_preferences.created_at,
+      updatedAt: txData.volunteer_preferences.updated_at,
+    };
+  }
+
+  // 6. Determine destination dashboard route
   let dashboardRoute = '/onboarding';
   if (input.role === 'requester') {
     dashboardRoute = isVerified ? '/dashboard/beneficiary' : '/onboarding';
