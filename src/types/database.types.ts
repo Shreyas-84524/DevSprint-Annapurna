@@ -215,11 +215,72 @@ export type Database = {
     Functions: {
       bootstrap_admin_user: {
         Args: {
-          bootstrap_secret: string
-          expected_secret_hash: string
-          target_user_id: string
+          p_display_name?: string
+          p_target_user_id: string
+        }
+        Returns: Json
+      }
+      cancel_verification_reservation: {
+        Args: {
+          p_reservation_id: string
+          p_user_id: string
         }
         Returns: boolean
+      }
+      complete_onboarding_tx: {
+        Args: {
+          p_address?: string | null
+          p_display_name: string
+          p_latitude?: number | null
+          p_location_label: string
+          p_longitude?: number | null
+          p_max_distance_km?: number
+          p_role: string
+          p_user_id: string
+          p_vehicle_type?: string
+        }
+        Returns: Json
+      }
+      consume_verification_success: {
+        Args: {
+          p_proof_id: string
+          p_request_id: string
+          p_user_id: string
+          p_verified_at: string
+        }
+        Returns: Json
+      }
+      finalize_verification_challenge: {
+        Args: {
+          p_expires_in_seconds: number
+          p_request_id: string
+          p_resend_after_seconds: number
+          p_reservation_id: string
+          p_user_id: string
+        }
+        Returns: Json
+      }
+      get_verification_challenge: {
+        Args: {
+          p_request_id?: string | null
+          p_user_id: string
+        }
+        Returns: Json
+      }
+      record_verification_failure: {
+        Args: {
+          p_request_id: string
+          p_user_id: string
+        }
+        Returns: Json
+      }
+      reserve_verification_challenge: {
+        Args: {
+          p_idempotency_key: string
+          p_phone: string
+          p_user_id: string
+        }
+        Returns: Json
       }
     }
     Enums: {
