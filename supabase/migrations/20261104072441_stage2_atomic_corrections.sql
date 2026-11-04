@@ -28,8 +28,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_verification_attempts_one_active_user
   WHERE status IN ('reserved', 'pending');
 
 REVOKE ALL ON TABLE public.profiles FROM anon, authenticated;
-GRANT SELECT, INSERT, UPDATE ON TABLE public.profiles TO authenticated;
+GRANT SELECT, UPDATE ON TABLE public.profiles TO authenticated;
 GRANT ALL ON TABLE public.profiles TO service_role;
+
+DROP POLICY IF EXISTS "profiles_insert_own" ON public.profiles;
 
 REVOKE ALL ON TABLE public.saved_locations FROM anon, authenticated;
 GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.saved_locations TO authenticated;
@@ -243,11 +245,12 @@ BEGIN
   SELECT * INTO v_attempt
   FROM public.verification_attempts
   WHERE user_id = p_user_id
-    AND status = 'pending'
+    AND status IN ('reserved', 'pending')
   ORDER BY created_at DESC
   LIMIT 1;
 
-  IF FOUND AND v_attempt.resend_available_at > now() THEN
+  IF FOUND
+     AND (v_attempt.status = 'reserved' OR v_attempt.resend_available_at > now()) THEN
     RAISE EXCEPTION USING ERRCODE = 'P0001', MESSAGE = 'COOLDOWN_ACTIVE';
   END IF;
 
@@ -601,7 +604,44 @@ DROP FUNCTION IF EXISTS internal.create_verification_challenge(uuid, text, text,
 DROP FUNCTION IF EXISTS internal.consume_verification_success(uuid, text, text);
 DROP FUNCTION IF EXISTS internal.record_verification_failure(uuid, text);
 
-ALTER FUNCTION public.protect_profile_immutability() SET search_path = '';
-ALTER FUNCTION public.update_row_timestamp() SET search_path = '';
+DROP FUNCTION IF EXISTS public.create_verification_challenge(uuid, text, text, text, integer, integer);
+DROP FUNCTION IF EXISTS public.consume_verification_success(uuid, text, text);
+
+CREATE OR REPLACE FUNCTION public.protect_profile_immutability()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = ''
+AS $$
+BEGIN
+  IF NEW.role IS DISTINCT FROM OLD.role
+     AND CURRENT_USER <> 'service_role' THEN
+    RAISE EXCEPTION 'User role is immutable and cannot be self-modified after onboarding';
+  END IF;
+
+  IF (
+    NEW.is_verified IS DISTINCT FROM OLD.is_verified
+    OR NEW.verified_at IS DISTINCT FROM OLD.verified_at
+  ) AND CURRENT_USER <> 'service_role' THEN
+    RAISE EXCEPTION 'Verification status can only be modified via verified server OTP flow';
+  END IF;
+
+  NEW.updated_at = pg_catalog.timezone('utc'::text, pg_catalog.now());
+  RETURN NEW;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.update_row_timestamp()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY INVOKER
+SET search_path = ''
+AS $$
+BEGIN
+  NEW.updated_at = pg_catalog.timezone('utc'::text, pg_catalog.now());
+  RETURN NEW;
+END;
+$$;
+
 REVOKE ALL ON FUNCTION public.protect_profile_immutability() FROM PUBLIC, anon, authenticated;
 REVOKE ALL ON FUNCTION public.update_row_timestamp() FROM PUBLIC, anon, authenticated;

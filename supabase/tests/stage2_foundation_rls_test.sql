@@ -3,7 +3,7 @@ BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
 
-SELECT plan(28);
+SELECT plan(38);
 
 INSERT INTO auth.users (id, email)
 VALUES
@@ -95,6 +95,10 @@ SELECT ok(
   'authenticated users can select profiles through RLS'
 );
 SELECT ok(
+  NOT pg_catalog.has_table_privilege('authenticated', 'public.profiles', 'INSERT'),
+  'authenticated users cannot bypass transactional onboarding with a direct profile insert'
+);
+SELECT ok(
   NOT pg_catalog.has_table_privilege('authenticated', 'public.verification_attempts', 'UPDATE'),
   'authenticated users cannot mutate verification attempts directly'
 );
@@ -139,6 +143,12 @@ SELECT throws_ok(
   'P0001',
   'User role is immutable and cannot be self-modified after onboarding',
   'an owner cannot escalate their role'
+);
+SELECT throws_ok(
+  $$ UPDATE public.profiles SET is_verified = true WHERE id = '10000000-0000-4000-8000-000000000001' $$,
+  'P0001',
+  'Verification status can only be modified via verified server OTP flow',
+  'an owner cannot self-verify'
 );
 
 RESET ROLE;
@@ -191,6 +201,38 @@ SELECT ok(
   ),
   'the compatibility users view runs as security invoker'
 );
+SELECT ok(
+  NOT (
+    SELECT prosecdef
+    FROM pg_catalog.pg_proc
+    WHERE oid = 'public.protect_profile_immutability()'::regprocedure
+  ),
+  'the profile-protection trigger observes the invoking database role'
+);
+SELECT ok(
+  NOT (
+    SELECT prosecdef
+    FROM pg_catalog.pg_proc
+    WHERE oid = 'public.update_row_timestamp()'::regprocedure
+  ),
+  'the timestamp trigger does not run with elevated privileges'
+);
+SELECT ok(
+  pg_catalog.to_regprocedure(
+    'public.create_verification_challenge(uuid,text,text,text,integer,integer)'
+  ) IS NULL,
+  'the legacy race-prone challenge RPC is removed'
+);
+SELECT ok(
+  pg_catalog.to_regprocedure(
+    'public.consume_verification_success(uuid,text,text)'
+  ) IS NULL,
+  'the legacy verification-consumption RPC is removed'
+);
+SELECT ok(
+  pg_catalog.to_regclass('public.idx_verification_attempts_one_active_user') IS NOT NULL,
+  'the database enforces at most one active verification attempt per user'
+);
 
 SET LOCAL ROLE service_role;
 
@@ -228,6 +270,40 @@ SELECT ok(
     WHERE user_id = '10000000-0000-4000-8000-000000000004'
   ),
   'transactional onboarding creates required dependent rows'
+);
+SELECT is(
+  (
+    public.reserve_verification_challenge(
+      '10000000-0000-4000-8000-000000000005',
+      '+919000000005',
+      'reservation-key-1'
+    ) ->> 'state'
+  ),
+  'reserved',
+  'the first OTP request creates a durable reservation'
+);
+SELECT is(
+  (
+    public.reserve_verification_challenge(
+      '10000000-0000-4000-8000-000000000005',
+      '+919000000005',
+      'reservation-key-1'
+    ) ->> 'state'
+  ),
+  'in_progress',
+  'the exact OTP retry returns the existing reservation'
+);
+SELECT throws_ok(
+  $$
+    SELECT public.reserve_verification_challenge(
+      '10000000-0000-4000-8000-000000000005',
+      '+919000000005',
+      'reservation-key-2'
+    )
+  $$,
+  'P0001',
+  'COOLDOWN_ACTIVE',
+  'a different concurrent OTP request cannot replace an in-flight reservation'
 );
 SELECT lives_ok(
   $$ SELECT public.bootstrap_admin_user('10000000-0000-4000-8000-000000000003', 'Administrator') $$,

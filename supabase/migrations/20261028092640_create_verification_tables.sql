@@ -1,4 +1,4 @@
--- Migration: 20261028000000_create_verification_tables.sql
+-- Migration: 20261028092640_create_verification_tables.sql
 -- Description: Reproducible schema for donor/requester OTP verification attempts and audit records.
 -- Invariants:
 --   1. Verification records are strictly separated from food QC.
