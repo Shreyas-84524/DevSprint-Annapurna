@@ -603,3 +603,5 @@ DROP FUNCTION IF EXISTS internal.record_verification_failure(uuid, text);
 
 ALTER FUNCTION public.protect_profile_immutability() SET search_path = '';
 ALTER FUNCTION public.update_row_timestamp() SET search_path = '';
+REVOKE ALL ON FUNCTION public.protect_profile_immutability() FROM PUBLIC, anon, authenticated;
+REVOKE ALL ON FUNCTION public.update_row_timestamp() FROM PUBLIC, anon, authenticated;
