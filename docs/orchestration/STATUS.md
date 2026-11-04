@@ -1,45 +1,48 @@
 # Project Status
 
-Updated: 2026-10-28 (Asia/Calcutta)
+Updated: 2026-11-04 (Asia/Calcutta)
 
 ## Overall
 
-Current stage: Stage 1
-Stage status: `BLOCKED` pending worker handoffs and human service configuration
-Recorded Git base: `d2e1dd17d54245b9ade0bd7a5b46b9e568acdd8e` (`main`, `origin/main`)
-Shared checkout: dirty; not an implementation worktree
+Current stage: Stage 2
+Stage status: `BLOCKED` at isolated database replay and pgTAP execution
+Recorded correction base: `5661dff`
+Integration branch: `codex/integration-stage2-fix`
+Integration implementation head: `5928193`
+Shared checkout: dirty and preserved; not used for implementation
 
 ## Separate status fields
 
 | Area | Status | Evidence |
 |---|---|---|
-| Implementation | Not started under this six-stage workflow | Existing application and two uncommitted Antigravity-edited files predate the workflow |
-| Codex verification | Stage 1 baseline complete; worker code not received | `docs/audits/STAGE_1_BASELINE.md` |
-| User manual verification | Not started | No Stage 1 manual checklist completed |
-| Deployment | Not started | No Preview URL or environment recorded |
+| Implementation | Stage 2 correction set complete on the integration branch | `23954f1`, `2e41cbd`, `5928193` |
+| Codex verification | Application checks pass; fresh database replay and pgTAP execution blocked | `docs/audits/STAGE_2_REAUDIT.md` |
+| User manual verification | Live Swift SMS/device check not run | Requires explicit authorization and a user-owned number |
+| Deployment | Not started | Stage 6 concern; production database was not mutated during this audit |
 
 ## Baseline checks
 
 | Check | Result |
 |---|---|
-| `git diff --check` | Pass with line-ending warnings on the two pre-existing modified files |
-| `npx tsc --noEmit` | Pass, exit 0 |
-| `npm run lint` | Pass, exit 0; 29 warnings |
-| `npm run build` | Pass, exit 0 with network available; initial sandbox run failed only fetching Google Fonts |
-| `npm test` | Fail/absent; no `test` script |
+| `git diff --check 5661dff..5928193` | Pass |
+| `npx tsc --noEmit` | Pass |
+| `npm run lint` | Pass; 29 pre-existing warnings, 0 errors |
+| `npm run build` | Pass; 37 routes and Proxy recognized |
+| `npm test` | Pass; 60 tests across 21 suites |
+| Fresh Supabase migration replay | Blocked; Docker and Podman are unavailable |
+| `supabase test db` | Blocked by the same local-runtime dependency |
 
 ## Human action required: yes
 
-1. Complete Antigravity's Supabase OAuth flow for the configured project-scoped MCP, then let the backend worker identify the accessible project name/reference. Do not authorize changes if that project is unrelated to Annapurna.
-2. Configure the Swift project key as the server-only `SWIFT_PROJECT_KEY` and its service URL as `SWIFT_BASE_URL`; never commit or paste the key into reports. The integration contract is now supplied by `swift-integration.md`.
-3. Relay the two Stage 1 prompts if direct Antigravity control remains unavailable, approve each generated Teamwork prompt artifact, and return their commit/handoff evidence.
+Authorize one isolated database-validation path: install/start Docker or Podman for local Supabase, or create a disposable Supabase preview branch. The production project must not receive this unverified migration.
 
 ## API/service/environment changes
 
-Codex made none. Antigravity configuration already points Supabase MCP at project reference `xtbabyqkgirjiratjcap`; authentication and project identity are unverified. No project mutation is authorized.
+Stage 2 now requires `SUPABASE_SERVICE_ROLE_KEY` for OTP persistence, onboarding transactions, and admin bootstrap. Browser and protected-route initialization fail closed when required public Supabase values are missing. The intended project `xtbabyqkgirjiratjcap` was confirmed healthy through a read-only query. No remote schema mutation was performed.
 
 ## Manual verification needed
 
-- Confirm whether `xtbabyqkgirjiratjcap` is the intended dedicated Annapurna project.
-- Confirm Swift gateway health and complete a controlled send/verify/wrong-code/replay test after implementation.
-- Confirm the worker worktrees are separate and based on the recorded Stage 1 base chosen after planning documents are committed.
+- Run a clean migration replay and `supabase test db` in an isolated database.
+- Re-run Supabase security/performance advisors against that resulting schema.
+- Complete a controlled Swift send/verify/wrong-code/replay test only with explicit authorization.
+- Keep Stage 3 paused until the database gate passes and this status is changed to `PASSED`.
