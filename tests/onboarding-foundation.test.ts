@@ -9,6 +9,8 @@ import {
   initiatePhoneVerification,
   confirmPhoneVerification,
   resetVerificationStores,
+  setTestVerificationClient,
+  createTestVerificationDb,
 } from '../src/server/verification';
 import { POST as adminBootstrapHandler } from '../src/app/api/admin/bootstrap/route';
 
@@ -17,6 +19,72 @@ class MockSupabaseDB {
   public profiles = new Map<string, any>();
   public savedLocations = new Map<string, any>();
   public volunteerPreferences = new Map<string, any>();
+
+  rpc = async (funcName: string, params: any) => {
+    if (funcName === 'complete_onboarding_tx') {
+      if (this.profiles.has(params.p_user_id)) {
+        return { data: null, error: { message: 'Profile already exists for this account' } };
+      }
+      if (params.p_role !== 'donor' && params.p_role !== 'requester' && params.p_role !== 'volunteer') {
+        return { data: null, error: { message: `Invalid role for onboarding: ${params.p_role}` } };
+      }
+      if (params.p_latitude == null || params.p_longitude == null) {
+        return { data: null, error: { message: 'A valid saved location is required for onboarding' } };
+      }
+      if (params.p_latitude < -90 || params.p_latitude > 90 || params.p_longitude < -180 || params.p_longitude > 180) {
+        return { data: null, error: { message: 'Coordinates are out of bounds' } };
+      }
+
+      const isVolunteer = params.p_role === 'volunteer';
+      const profile = {
+        id: params.p_user_id,
+        display_name: params.p_display_name,
+        role: params.p_role,
+        is_verified: isVolunteer,
+        verified_at: isVolunteer ? new Date().toISOString() : null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      this.profiles.set(params.p_user_id, profile);
+
+      const locId = 'loc_' + Math.random().toString(36).substring(2);
+      const location = {
+        id: locId,
+        user_id: params.p_user_id,
+        label: params.p_location_label || 'Default Location',
+        address: params.p_address || null,
+        latitude: params.p_latitude,
+        longitude: params.p_longitude,
+        is_default: true,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+      this.savedLocations.set(locId, location);
+
+      let pref = null;
+      if (isVolunteer) {
+        pref = {
+          user_id: params.p_user_id,
+          vehicle_type: params.p_vehicle_type || 'motorcycle',
+          max_distance_km: params.p_max_distance_km || 10,
+          is_available: true,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        };
+        this.volunteerPreferences.set(params.p_user_id, pref);
+      }
+
+      return {
+        data: {
+          profile,
+          location,
+          volunteer_preferences: pref,
+        },
+        error: null,
+      };
+    }
+    return { data: null, error: { message: `Unknown RPC function: ${funcName}` } };
+  };
 
   from = (table: string) => {
     return {
@@ -127,6 +195,7 @@ describe('Annapurna Phase 2 — Onboarding & Foundation Suite', () => {
   beforeEach(() => {
     mockDb = new MockSupabaseDB();
     resetVerificationStores();
+    setTestVerificationClient(createTestVerificationDb());
   });
 
   describe('1. Canonical Role Creation & Constraints', () => {

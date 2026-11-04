@@ -57,7 +57,7 @@ RETURNS BOOLEAN
 LANGUAGE sql
 STABLE
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = ''
 AS $$
   SELECT EXISTS (
     SELECT 1 FROM public.profiles
@@ -72,24 +72,25 @@ GRANT EXECUTE ON FUNCTION internal.is_admin() TO authenticated, service_role;
 CREATE OR REPLACE FUNCTION public.protect_profile_immutability()
 RETURNS TRIGGER
 LANGUAGE plpgsql
-SET search_path = public, pg_temp
+SECURITY DEFINER
+SET search_path = ''
 AS $$
 BEGIN
   -- Prevent non-service-role callers from changing immutable role
   IF NEW.role IS DISTINCT FROM OLD.role THEN
-    IF current_user != 'service_role' AND NOT pg_has_role(current_user, 'service_role', 'MEMBER') THEN
+    IF CURRENT_USER != 'service_role' AND NOT pg_catalog.pg_has_role(CURRENT_USER, 'service_role', 'MEMBER') THEN
       RAISE EXCEPTION 'User role is immutable and cannot be self-modified after onboarding';
     END IF;
   END IF;
 
   -- Prevent clients from directly self-verifying; verification must occur via server OTP flow
   IF (NEW.is_verified IS DISTINCT FROM OLD.is_verified OR NEW.verified_at IS DISTINCT FROM OLD.verified_at) THEN
-    IF current_user != 'service_role' AND NOT pg_has_role(current_user, 'service_role', 'MEMBER') THEN
+    IF CURRENT_USER != 'service_role' AND NOT pg_catalog.pg_has_role(CURRENT_USER, 'service_role', 'MEMBER') THEN
       RAISE EXCEPTION 'Verification status can only be modified via verified server OTP flow';
     END IF;
   END IF;
 
-  NEW.updated_at = TIMEZONE('utc'::text, NOW());
+  NEW.updated_at = pg_catalog.timezone('utc'::text, pg_catalog.now());
   RETURN NEW;
 END;
 $$;
@@ -104,10 +105,11 @@ CREATE TRIGGER trg_protect_profile_immutability
 CREATE OR REPLACE FUNCTION public.update_row_timestamp()
 RETURNS TRIGGER
 LANGUAGE plpgsql
-SET search_path = public, pg_temp
+SECURITY DEFINER
+SET search_path = ''
 AS $$
 BEGIN
-  NEW.updated_at = TIMEZONE('utc'::text, NOW());
+  NEW.updated_at = pg_catalog.timezone('utc'::text, pg_catalog.now());
   RETURN NEW;
 END;
 $$;
@@ -217,6 +219,12 @@ CREATE POLICY "volunteer_preferences_delete_own"
   TO authenticated
   USING (user_id = (select auth.uid()));
 
+-- Explicit Data API Grants for Public Tables
+GRANT SELECT, INSERT, UPDATE ON public.profiles TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.saved_locations TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.volunteer_preferences TO authenticated;
+GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO service_role;
+
 -- 13. Backwards-Compatible Views (Security Invoker, safe table drop guard)
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
 DROP FUNCTION IF EXISTS public.handle_new_user();
@@ -235,7 +243,7 @@ AS
     p.created_at
   FROM public.profiles p;
 
--- 14. Secure Admin Bootstrap Function with One-Time Lockout
+-- 14. Secure Admin Bootstrap Function with Advisory Lock & One-Time Lockout
 CREATE OR REPLACE FUNCTION public.bootstrap_admin_user(
   target_user_id UUID,
   bootstrap_secret TEXT,
@@ -244,19 +252,22 @@ CREATE OR REPLACE FUNCTION public.bootstrap_admin_user(
 RETURNS BOOLEAN
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = ''
 AS $$
 BEGIN
+  -- Serialize concurrent first-admin calls using an advisory transaction lock
+  PERFORM pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext('admin_bootstrap_lock'));
+
   IF target_user_id IS NULL THEN
     RAISE EXCEPTION 'Target user ID must be provided';
   END IF;
 
-  IF bootstrap_secret IS NULL OR length(bootstrap_secret) < 16 THEN
+  IF bootstrap_secret IS NULL OR pg_catalog.length(bootstrap_secret) < 16 THEN
     RAISE EXCEPTION 'Invalid admin bootstrap secret provided';
   END IF;
 
   -- Validate secret hash match
-  IF encode(digest(bootstrap_secret, 'sha256'), 'hex') != expected_secret_hash THEN
+  IF pg_catalog.encode(extensions.digest(bootstrap_secret, 'sha256'), 'hex') != expected_secret_hash THEN
     RAISE EXCEPTION 'Admin bootstrap authentication failed';
   END IF;
 
@@ -285,15 +296,15 @@ BEGIN
     'System Administrator',
     'admin',
     true,
-    now(),
-    now(),
-    now()
+    pg_catalog.now(),
+    pg_catalog.now(),
+    pg_catalog.now()
   )
   ON CONFLICT (id) DO UPDATE SET
     role = 'admin',
     is_verified = true,
-    verified_at = now(),
-    updated_at = now();
+    verified_at = pg_catalog.now(),
+    updated_at = pg_catalog.now();
 
   RETURN TRUE;
 END;
@@ -302,8 +313,8 @@ $$;
 REVOKE ALL ON FUNCTION public.bootstrap_admin_user(UUID, TEXT, TEXT) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.bootstrap_admin_user(UUID, TEXT, TEXT) TO service_role;
 
--- 15. Transactional Onboarding Procedure (Non-exposed schema)
-CREATE OR REPLACE FUNCTION internal.complete_onboarding_tx(
+-- 15. Transactional Onboarding Procedure (Callable via PostgREST RPC)
+CREATE OR REPLACE FUNCTION public.complete_onboarding_tx(
   p_user_id UUID,
   p_display_name TEXT,
   p_role TEXT,
@@ -316,8 +327,8 @@ CREATE OR REPLACE FUNCTION internal.complete_onboarding_tx(
 )
 RETURNS jsonb
 LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public, pg_temp
+SECURITY INVOKER
+SET search_path = ''
 AS $$
 DECLARE
   v_is_verified BOOLEAN;
@@ -326,7 +337,7 @@ DECLARE
   v_location RECORD;
   v_pref RECORD;
 BEGIN
-  IF auth.uid() != p_user_id AND current_user != 'service_role' AND NOT pg_has_role(current_user, 'service_role', 'MEMBER') THEN
+  IF auth.uid() != p_user_id AND CURRENT_USER != 'service_role' AND NOT pg_catalog.pg_has_role(CURRENT_USER, 'service_role', 'MEMBER') THEN
     RAISE EXCEPTION 'Unauthorized onboarding creation';
   END IF;
 
@@ -348,37 +359,62 @@ BEGIN
 
   v_is_verified := (p_role = 'volunteer');
   IF v_is_verified THEN
-    v_verified_at := now();
+    v_verified_at := pg_catalog.now();
   ELSE
     v_verified_at := NULL;
   END IF;
 
   INSERT INTO public.profiles (id, display_name, role, is_verified, verified_at, created_at, updated_at)
-  VALUES (p_user_id, trim(p_display_name), p_role, v_is_verified, v_verified_at, now(), now())
+  VALUES (p_user_id, pg_catalog.trim(p_display_name), p_role, v_is_verified, v_verified_at, pg_catalog.now(), pg_catalog.now())
   RETURNING * INTO v_profile;
 
   INSERT INTO public.saved_locations (user_id, label, address, latitude, longitude, is_default, created_at, updated_at)
-  VALUES (p_user_id, COALESCE(NULLIF(trim(p_location_label), ''), 'Default Location'), p_address, p_latitude, p_longitude, true, now(), now())
+  VALUES (p_user_id, pg_catalog.coalesce(pg_catalog.nullif(pg_catalog.trim(p_location_label), ''), 'Default Location'), p_address, p_latitude, p_longitude, true, pg_catalog.now(), pg_catalog.now())
   RETURNING * INTO v_location;
 
   IF p_role = 'volunteer' THEN
     INSERT INTO public.volunteer_preferences (user_id, vehicle_type, max_distance_km, is_available, created_at, updated_at)
-    VALUES (p_user_id, COALESCE(p_vehicle_type, 'motorcycle'), COALESCE(p_max_distance_km, 10.0), true, now(), now())
+    VALUES (p_user_id, pg_catalog.coalesce(p_vehicle_type, 'motorcycle'), pg_catalog.coalesce(p_max_distance_km, 10.0), true, pg_catalog.now(), pg_catalog.now())
     RETURNING * INTO v_pref;
   END IF;
 
-  RETURN jsonb_build_object(
-    'profile', row_to_json(v_profile),
-    'location', row_to_json(v_location),
-    'volunteer_preferences', CASE WHEN p_role = 'volunteer' THEN row_to_json(v_pref) ELSE NULL END
+  RETURN pg_catalog.jsonb_build_object(
+    'profile', pg_catalog.row_to_json(v_profile),
+    'location', pg_catalog.row_to_json(v_location),
+    'volunteer_preferences', CASE WHEN p_role = 'volunteer' THEN pg_catalog.row_to_json(v_pref) ELSE NULL END
   );
 END;
 $$;
 
+REVOKE ALL ON FUNCTION public.complete_onboarding_tx(UUID, TEXT, TEXT, TEXT, TEXT, NUMERIC, NUMERIC, TEXT, NUMERIC) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.complete_onboarding_tx(UUID, TEXT, TEXT, TEXT, TEXT, NUMERIC, NUMERIC, TEXT, NUMERIC) TO authenticated, service_role;
+
+-- Compatibility alias in internal schema
+CREATE OR REPLACE FUNCTION internal.complete_onboarding_tx(
+  p_user_id UUID,
+  p_display_name TEXT,
+  p_role TEXT,
+  p_location_label TEXT,
+  p_address TEXT DEFAULT NULL,
+  p_latitude NUMERIC DEFAULT NULL,
+  p_longitude NUMERIC DEFAULT NULL,
+  p_vehicle_type TEXT DEFAULT 'motorcycle',
+  p_max_distance_km NUMERIC DEFAULT 10.0
+)
+RETURNS jsonb
+LANGUAGE sql
+SECURITY INVOKER
+SET search_path = ''
+AS $$
+  SELECT public.complete_onboarding_tx(
+    p_user_id, p_display_name, p_role, p_location_label, p_address, p_latitude, p_longitude, p_vehicle_type, p_max_distance_km
+  );
+$$;
+
 GRANT EXECUTE ON FUNCTION internal.complete_onboarding_tx(UUID, TEXT, TEXT, TEXT, TEXT, NUMERIC, NUMERIC, TEXT, NUMERIC) TO authenticated, service_role;
 
--- 16. Durable OTP Challenge & Consumption Procedures (Non-exposed schema)
-CREATE OR REPLACE FUNCTION internal.create_verification_challenge(
+-- 16. Durable OTP Challenge & Consumption Procedures (Callable via RPC)
+CREATE OR REPLACE FUNCTION public.create_verification_challenge(
   p_user_id UUID,
   p_phone TEXT,
   p_request_id TEXT,
@@ -389,7 +425,7 @@ CREATE OR REPLACE FUNCTION internal.create_verification_challenge(
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = ''
 AS $$
 DECLARE
   v_user_hourly_count INT;
@@ -397,7 +433,7 @@ DECLARE
   v_existing_active RECORD;
   v_new_attempt RECORD;
 BEGIN
-  IF auth.uid() != p_user_id AND current_user != 'service_role' AND NOT pg_has_role(current_user, 'service_role', 'MEMBER') THEN
+  IF auth.uid() != p_user_id AND CURRENT_USER != 'service_role' AND NOT pg_catalog.pg_has_role(CURRENT_USER, 'service_role', 'MEMBER') THEN
     RAISE EXCEPTION 'Unauthorized verification challenge creation';
   END IF;
 
@@ -406,12 +442,12 @@ BEGIN
   WHERE user_id = p_user_id
     AND idempotency_key = p_idempotency_key
     AND status = 'pending'
-    AND expires_at > now()
+    AND expires_at > pg_catalog.now()
   ORDER BY created_at DESC
   LIMIT 1;
 
   IF FOUND THEN
-    RETURN jsonb_build_object(
+    RETURN pg_catalog.jsonb_build_object(
       'id', v_existing_active.id,
       'request_id', v_existing_active.request_id,
       'status', 'idempotent_existing',
@@ -420,19 +456,19 @@ BEGIN
     );
   END IF;
 
-  SELECT COUNT(*) INTO v_user_hourly_count
+  SELECT pg_catalog.count(*) INTO v_user_hourly_count
   FROM public.verification_attempts
   WHERE user_id = p_user_id
-    AND created_at > (now() - interval '1 hour');
+    AND created_at > (pg_catalog.now() - interval '1 hour');
 
   IF v_user_hourly_count >= 5 THEN
     RAISE EXCEPTION 'Hourly verification attempt limit reached for this account';
   END IF;
 
-  SELECT COUNT(*) INTO v_phone_hourly_count
+  SELECT pg_catalog.count(*) INTO v_phone_hourly_count
   FROM public.verification_attempts
   WHERE phone = p_phone
-    AND created_at > (now() - interval '1 hour');
+    AND created_at > (pg_catalog.now() - interval '1 hour');
 
   IF v_phone_hourly_count >= 5 THEN
     RAISE EXCEPTION 'Hourly verification attempt limit reached for this phone number';
@@ -442,7 +478,7 @@ BEGIN
   FROM public.verification_attempts
   WHERE user_id = p_user_id
     AND status = 'pending'
-    AND resend_available_at > now()
+    AND resend_available_at > pg_catalog.now()
   ORDER BY created_at DESC
   LIMIT 1;
 
@@ -451,7 +487,7 @@ BEGIN
   END IF;
 
   UPDATE public.verification_attempts
-  SET status = 'expired', updated_at = now()
+  SET status = 'expired', updated_at = pg_catalog.now()
   WHERE user_id = p_user_id AND status = 'pending';
 
   INSERT INTO public.verification_attempts (
@@ -472,15 +508,15 @@ BEGIN
     p_request_id,
     p_idempotency_key,
     'pending',
-    now() + (p_expires_in_seconds || ' seconds')::interval,
-    now() + (p_resend_cooldown_seconds || ' seconds')::interval,
+    pg_catalog.now() + (p_expires_in_seconds || ' seconds')::interval,
+    pg_catalog.now() + (p_resend_cooldown_seconds || ' seconds')::interval,
     0,
-    now(),
-    now()
+    pg_catalog.now(),
+    pg_catalog.now()
   )
   RETURNING * INTO v_new_attempt;
 
-  RETURN jsonb_build_object(
+  RETURN pg_catalog.jsonb_build_object(
     'id', v_new_attempt.id,
     'request_id', v_new_attempt.request_id,
     'status', 'created',
@@ -490,9 +526,10 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION internal.create_verification_challenge(UUID, TEXT, TEXT, TEXT, INT, INT) TO authenticated, service_role;
+REVOKE ALL ON FUNCTION public.create_verification_challenge(UUID, TEXT, TEXT, TEXT, INT, INT) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.create_verification_challenge(UUID, TEXT, TEXT, TEXT, INT, INT) TO service_role;
 
-CREATE OR REPLACE FUNCTION internal.consume_verification_success(
+CREATE OR REPLACE FUNCTION public.consume_verification_success(
   p_user_id UUID,
   p_request_id TEXT,
   p_proof_id TEXT
@@ -500,13 +537,13 @@ CREATE OR REPLACE FUNCTION internal.consume_verification_success(
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = ''
 AS $$
 DECLARE
   v_attempt RECORD;
   v_phone TEXT;
 BEGIN
-  IF auth.uid() != p_user_id AND current_user != 'service_role' AND NOT pg_has_role(current_user, 'service_role', 'MEMBER') THEN
+  IF auth.uid() != p_user_id AND CURRENT_USER != 'service_role' AND NOT pg_catalog.pg_has_role(CURRENT_USER, 'service_role', 'MEMBER') THEN
     RAISE EXCEPTION 'Unauthorized verification consumption';
   END IF;
 
@@ -521,9 +558,9 @@ BEGIN
     RAISE EXCEPTION 'No matching pending verification attempt found';
   END IF;
 
-  IF v_attempt.expires_at <= now() THEN
+  IF v_attempt.expires_at <= pg_catalog.now() THEN
     UPDATE public.verification_attempts
-    SET status = 'expired', updated_at = now()
+    SET status = 'expired', updated_at = pg_catalog.now()
     WHERE id = v_attempt.id;
     RAISE EXCEPTION 'Verification challenge has expired';
   END IF;
@@ -531,7 +568,7 @@ BEGIN
   v_phone := v_attempt.phone;
 
   UPDATE public.verification_attempts
-  SET status = 'consumed', updated_at = now()
+  SET status = 'consumed', updated_at = pg_catalog.now()
   WHERE id = v_attempt.id;
 
   INSERT INTO public.verification_records (
@@ -548,50 +585,51 @@ BEGIN
     v_phone,
     p_proof_id,
     'verified',
-    now(),
-    now(),
-    now()
+    pg_catalog.now(),
+    pg_catalog.now(),
+    pg_catalog.now()
   )
   ON CONFLICT (user_id) DO UPDATE SET
     phone = EXCLUDED.phone,
     proof_id = EXCLUDED.proof_id,
     status = 'verified',
-    verified_at = now(),
-    updated_at = now();
+    verified_at = pg_catalog.now(),
+    updated_at = pg_catalog.now();
 
   UPDATE public.profiles
   SET
     is_verified = true,
     phone = v_phone,
-    verified_at = now(),
-    updated_at = now()
+    verified_at = pg_catalog.now(),
+    updated_at = pg_catalog.now()
   WHERE id = p_user_id;
 
-  RETURN jsonb_build_object(
+  RETURN pg_catalog.jsonb_build_object(
     'success', true,
     'phone', v_phone,
     'proof_id', p_proof_id,
-    'verified_at', now()
+    'verified_at', pg_catalog.now()
   );
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION internal.consume_verification_success(UUID, TEXT, TEXT) TO authenticated, service_role;
+REVOKE ALL ON FUNCTION public.consume_verification_success(UUID, TEXT, TEXT) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.consume_verification_success(UUID, TEXT, TEXT) TO service_role;
 
-CREATE OR REPLACE FUNCTION internal.record_verification_failure(
+CREATE OR REPLACE FUNCTION public.record_verification_failure(
   p_user_id UUID,
   p_request_id TEXT
 )
 RETURNS jsonb
 LANGUAGE plpgsql
 SECURITY DEFINER
-SET search_path = public, pg_temp
+SET search_path = ''
 AS $$
 DECLARE
   v_attempt RECORD;
   v_new_count INT;
 BEGIN
-  IF auth.uid() != p_user_id AND current_user != 'service_role' AND NOT pg_has_role(current_user, 'service_role', 'MEMBER') THEN
+  IF auth.uid() != p_user_id AND CURRENT_USER != 'service_role' AND NOT pg_catalog.pg_has_role(CURRENT_USER, 'service_role', 'MEMBER') THEN
     RAISE EXCEPTION 'Unauthorized verification update';
   END IF;
 
@@ -610,20 +648,20 @@ BEGIN
 
   IF v_new_count >= 5 THEN
     UPDATE public.verification_attempts
-    SET attempts_count = v_new_count, status = 'expired', updated_at = now()
+    SET attempts_count = v_new_count, status = 'expired', updated_at = pg_catalog.now()
     WHERE id = v_attempt.id;
 
-    RETURN jsonb_build_object(
+    RETURN pg_catalog.jsonb_build_object(
       'attempts_count', v_new_count,
       'remaining_attempts', 0,
       'status', 'locked'
     );
   ELSE
     UPDATE public.verification_attempts
-    SET attempts_count = v_new_count, updated_at = now()
+    SET attempts_count = v_new_count, updated_at = pg_catalog.now()
     WHERE id = v_attempt.id;
 
-    RETURN jsonb_build_object(
+    RETURN pg_catalog.jsonb_build_object(
       'attempts_count', v_new_count,
       'remaining_attempts', 5 - v_new_count,
       'status', 'pending'
@@ -632,4 +670,38 @@ BEGIN
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION internal.record_verification_failure(UUID, TEXT) TO authenticated, service_role;
+REVOKE ALL ON FUNCTION public.record_verification_failure(UUID, TEXT) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.record_verification_failure(UUID, TEXT) TO service_role;
+
+-- Compatibility aliases in internal schema
+CREATE OR REPLACE FUNCTION internal.create_verification_challenge(
+  p_user_id UUID,
+  p_phone TEXT,
+  p_request_id TEXT,
+  p_idempotency_key TEXT,
+  p_expires_in_seconds INT DEFAULT 600,
+  p_resend_cooldown_seconds INT DEFAULT 60
+)
+RETURNS jsonb LANGUAGE sql SECURITY DEFINER SET search_path = '' AS $$
+  SELECT public.create_verification_challenge(p_user_id, p_phone, p_request_id, p_idempotency_key, p_expires_in_seconds, p_resend_cooldown_seconds);
+$$;
+GRANT EXECUTE ON FUNCTION internal.create_verification_challenge(UUID, TEXT, TEXT, TEXT, INT, INT) TO service_role;
+
+CREATE OR REPLACE FUNCTION internal.consume_verification_success(
+  p_user_id UUID,
+  p_request_id TEXT,
+  p_proof_id TEXT
+)
+RETURNS jsonb LANGUAGE sql SECURITY DEFINER SET search_path = '' AS $$
+  SELECT public.consume_verification_success(p_user_id, p_request_id, p_proof_id);
+$$;
+GRANT EXECUTE ON FUNCTION internal.consume_verification_success(UUID, TEXT, TEXT) TO service_role;
+
+CREATE OR REPLACE FUNCTION internal.record_verification_failure(
+  p_user_id UUID,
+  p_request_id TEXT
+)
+RETURNS jsonb LANGUAGE sql SECURITY DEFINER SET search_path = '' AS $$
+  SELECT public.record_verification_failure(p_user_id, p_request_id);
+$$;
+GRANT EXECUTE ON FUNCTION internal.record_verification_failure(UUID, TEXT) TO service_role;

@@ -8,7 +8,6 @@
 
 import { sendOtp, verifyOtp, normalizeE164Phone, SwiftError } from './swift';
 import { getServiceRoleClient } from '@/lib/supabase-admin';
-import { createClient as createServerSupabaseClient } from '@/lib/supabase-server';
 
 export interface PendingAttempt {
   id: string;
@@ -42,7 +41,7 @@ const attemptsCache = new Map<string, PendingAttempt>();
 class InMemoryTestSupabase {
   from(table: string) {
     return {
-      select: (_cols?: string, options?: { count?: string; head?: boolean }) => {
+      select: (columns?: string, options?: { count?: 'exact' }) => {
         const filters: Record<string, any> = {};
         const query = {
           eq: (col: string, val: any) => {
@@ -163,7 +162,9 @@ class InMemoryTestSupabase {
             filters[col] = val;
             return query;
           },
+          select: () => query,
           then: (resolve: any) => {
+            const modified: any[] = [];
             if (table === 'verification_attempts') {
               for (const a of attemptsCache.values()) {
                 if (filters.id && a.id !== filters.id && a.requestId !== filters.id) continue;
@@ -171,9 +172,10 @@ class InMemoryTestSupabase {
                 if (filters.status && a.status !== filters.status) continue;
                 if (updates.status) a.status = updates.status;
                 if (updates.attempts_count !== undefined) a.attemptsCount = updates.attempts_count;
+                modified.push(a);
               }
             }
-            return resolve({ error: null });
+            return resolve({ data: modified, error: null });
           },
         };
         return query;
@@ -194,24 +196,146 @@ class InMemoryTestSupabase {
       },
     };
   }
+
+  rpc = async (funcName: string, params: any) => {
+    if (funcName === 'create_verification_challenge') {
+      for (const a of attemptsCache.values()) {
+        if (a.userId === params.p_user_id && a.idempotencyKey === params.p_idempotency_key && a.status === 'pending' && a.expiresAt > Date.now()) {
+          return {
+            data: {
+              id: a.id,
+              request_id: a.requestId,
+              status: 'idempotent_existing',
+              resend_available_at: new Date(a.resendAvailableAt).toISOString(),
+              expires_at: new Date(a.expiresAt).toISOString(),
+            },
+            error: null,
+          };
+        }
+      }
+      for (const a of attemptsCache.values()) {
+        if (a.userId === params.p_user_id && a.status === 'pending' && a.resendAvailableAt > Date.now()) {
+          return { data: null, error: { message: 'Resend cooldown active.' } };
+        }
+      }
+      let count = 0;
+      const oneHourAgo = Date.now() - 3600000;
+      for (const a of attemptsCache.values()) {
+        if (a.userId === params.p_user_id && a.createdAt >= oneHourAgo) count++;
+      }
+      if (count >= 5) {
+        return { data: null, error: { message: 'Hourly verification attempt limit reached for this account' } };
+      }
+      for (const a of attemptsCache.values()) {
+        if (a.userId === params.p_user_id && a.status === 'pending') {
+          a.status = 'expired';
+        }
+      }
+      const attemptId = `att_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+      const expiresAt = Date.now() + (params.p_expires_in_seconds || 600) * 1000;
+      const resendAvailableAt = Date.now() + (params.p_resend_cooldown_seconds || 60) * 1000;
+      attemptsCache.set(attemptId, {
+        id: attemptId,
+        userId: params.p_user_id,
+        phone: params.p_phone,
+        requestId: params.p_request_id,
+        idempotencyKey: params.p_idempotency_key,
+        status: 'pending',
+        expiresAt,
+        resendAvailableAt,
+        attemptsCount: 0,
+        createdAt: Date.now(),
+      });
+      return {
+        data: {
+          id: attemptId,
+          request_id: params.p_request_id,
+          status: 'created',
+          resend_available_at: new Date(resendAvailableAt).toISOString(),
+          expires_at: new Date(expiresAt).toISOString(),
+        },
+        error: null,
+      };
+    }
+    if (funcName === 'consume_verification_success') {
+      let found = null;
+      for (const a of attemptsCache.values()) {
+        if (a.userId === params.p_user_id && a.requestId === params.p_request_id && a.status === 'pending') {
+          found = a;
+          break;
+        }
+      }
+      if (!found) {
+        return { data: null, error: { message: 'No matching pending verification attempt found' } };
+      }
+      if (found.expiresAt <= Date.now()) {
+        found.status = 'expired';
+        return { data: null, error: { message: 'Verification challenge has expired' } };
+      }
+      found.status = 'consumed';
+      recordsCache.set(params.p_user_id, {
+        userId: params.p_user_id,
+        phone: found.phone,
+        proofId: params.p_proof_id,
+        status: 'verified',
+        verifiedAt: new Date().toISOString(),
+      });
+      return {
+        data: {
+          success: true,
+          phone: found.phone,
+          proof_id: params.p_proof_id,
+          verified_at: new Date().toISOString(),
+        },
+        error: null,
+      };
+    }
+    if (funcName === 'record_verification_failure') {
+      let found = null;
+      for (const a of attemptsCache.values()) {
+        if (a.userId === params.p_user_id && a.requestId === params.p_request_id && a.status === 'pending') {
+          found = a;
+          break;
+        }
+      }
+      if (!found) {
+        return { data: null, error: { message: 'No matching pending verification attempt found' } };
+      }
+      found.attemptsCount++;
+      if (found.attemptsCount >= 5) {
+        found.status = 'expired';
+        return { data: { attempts_count: found.attemptsCount, remaining_attempts: 0, status: 'locked' }, error: null };
+      }
+      return { data: { attempts_count: found.attemptsCount, remaining_attempts: 5 - found.attemptsCount, status: 'pending' }, error: null };
+    }
+    return { data: null, error: { message: `Unknown RPC function: ${funcName}` } };
+  };
 }
 
-const fallbackTestDb = new InMemoryTestSupabase();
+let customTestClientOverride: any = null;
+
+export function setTestVerificationClient(client: any) {
+  customTestClientOverride = client;
+}
+
+export function createTestVerificationDb() {
+  return new InMemoryTestSupabase();
+}
 
 /**
  * Resolves the appropriate Supabase client for verification operations.
- * Prefers explicitly supplied test client, then service role client, then server client.
+ * Fails closed in production if durable credentials are missing.
  */
 async function resolveVerificationClient(customClient?: any) {
   if (customClient) return customClient;
+  if (customTestClientOverride) return customTestClientOverride;
   try {
     return getServiceRoleClient();
   } catch {
-    try {
-      return await createServerSupabaseClient();
-    } catch {
-      return fallbackTestDb;
-    }
+    throw new SwiftError('Durable database store is unavailable for verification.', {
+      code: 'DURABLE_STORE_UNAVAILABLE',
+      status: 500,
+    });
   }
 }
 
@@ -474,60 +598,73 @@ export async function confirmPhoneVerification(params: {
   const verifiedAt = verifyResult.verifiedAt || new Date().toISOString();
   const proofId = activeAttempt.request_id; // Authoritative Swift request ID proof
 
-  // A. Mark attempt as consumed
-  const { error: consumeError } = await supabase
-    .from('verification_attempts')
-    .update({
-      status: 'consumed',
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', activeAttempt.id);
-
-  if (consumeError) {
-    console.error('Failed to consume verification attempt:', consumeError);
-    throw new SwiftError('Database error occurred while finalizing verification.', {
-      code: 'DATABASE_PERSISTENCE_FAILED',
-      status: 500,
-    });
-  }
-
-  // B. Upsert verification_records with proof_id
-  const { error: recordError } = await supabase
-    .from('verification_records')
-    .upsert({
-      user_id: userId,
-      phone: activeAttempt.phone,
-      proof_id: proofId,
-      status: 'verified',
-      verified_at: verifiedAt,
-      updated_at: new Date().toISOString(),
+  if (typeof supabase.rpc === 'function') {
+    const { error: rpcError } = await supabase.rpc('consume_verification_success', {
+      p_user_id: userId,
+      p_request_id: activeAttempt.request_id,
+      p_proof_id: proofId,
     });
 
-  if (recordError) {
-    console.error('Failed to persist verification record:', recordError);
-    throw new SwiftError('Database error occurred while recording verification evidence.', {
-      code: 'DATABASE_PERSISTENCE_FAILED',
-      status: 500,
-    });
-  }
+    if (rpcError) {
+      console.error('Failed to consume verification atomically via RPC:', rpcError);
+      throw new SwiftError('Database error occurred while finalizing verification atomically.', {
+        code: 'DATABASE_PERSISTENCE_FAILED',
+        status: 500,
+      });
+    }
+  } else {
+    // Condition-checked update: ensure row is still pending before consuming
+    const { data: consumedRows, error: consumeError } = await supabase
+      .from('verification_attempts')
+      .update({
+        status: 'consumed',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', activeAttempt.id)
+      .eq('status', 'pending')
+      .select('*');
 
-  // C. Update user profile to verified
-  const { error: profileError } = await supabase
-    .from('profiles')
-    .update({
-      is_verified: true,
-      phone: activeAttempt.phone,
-      verified_at: verifiedAt,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', userId);
+    if (consumeError || (consumedRows && consumedRows.length === 0)) {
+      throw new SwiftError('Challenge was already consumed or invalid.', {
+        code: 'CHALLENGE_ALREADY_CONSUMED',
+        status: 409,
+      });
+    }
 
-  if (profileError) {
-    console.error('Failed to update profile verification status:', profileError);
-    throw new SwiftError('Database error occurred while updating profile verification.', {
-      code: 'DATABASE_PERSISTENCE_FAILED',
-      status: 500,
-    });
+    const { error: recordError } = await supabase
+      .from('verification_records')
+      .upsert({
+        user_id: userId,
+        phone: activeAttempt.phone,
+        proof_id: proofId,
+        status: 'verified',
+        verified_at: verifiedAt,
+        updated_at: new Date().toISOString(),
+      });
+
+    if (recordError) {
+      throw new SwiftError('Database error occurred while recording verification evidence.', {
+        code: 'DATABASE_PERSISTENCE_FAILED',
+        status: 500,
+      });
+    }
+
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .update({
+        is_verified: true,
+        phone: activeAttempt.phone,
+        verified_at: verifiedAt,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', userId);
+
+    if (profileError) {
+      throw new SwiftError('Database error occurred while updating profile verification.', {
+        code: 'DATABASE_PERSISTENCE_FAILED',
+        status: 500,
+      });
+    }
   }
 
   // Update in-memory mirror cache

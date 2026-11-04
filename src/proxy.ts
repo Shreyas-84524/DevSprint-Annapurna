@@ -6,11 +6,25 @@ export async function proxy(request: NextRequest) {
     request,
   });
 
+  const path = request.nextUrl.pathname;
+  const isProtectedRoute =
+    path.startsWith("/dashboard") ||
+    path.startsWith("/admin");
+  const isAuthRoute =
+    path.startsWith("/login") ||
+    path.startsWith("/register");
+
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!supabaseUrl || !supabaseAnonKey) {
-    // Fail closed if Supabase credentials are missing
+    // Fail closed: Protected routes must NEVER be accessible without auth configuration
+    if (isProtectedRoute) {
+      const url = request.nextUrl.clone();
+      url.pathname = "/login";
+      url.searchParams.set("error", "auth_unavailable");
+      return NextResponse.redirect(url);
+    }
     return supabaseResponse;
   }
 
@@ -37,16 +51,6 @@ export async function proxy(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-
-  const path = request.nextUrl.pathname;
-
-  const isProtectedRoute =
-    path.startsWith("/dashboard") ||
-    path.startsWith("/admin");
-
-  const isAuthRoute =
-    path.startsWith("/login") ||
-    path.startsWith("/register");
 
   // 1. Unauthenticated users cannot access protected dashboards
   if (isProtectedRoute && !user) {

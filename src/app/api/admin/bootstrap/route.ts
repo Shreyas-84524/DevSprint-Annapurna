@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { getServiceRoleClient } from '@/lib/supabase-admin';
-import { createClient as createServerSupabaseClient } from '@/lib/supabase-server';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -87,15 +86,24 @@ export async function POST(req: Request) {
       );
     }
 
-    // 3. Resolve privileged client
+    // 3. Resolve privileged client (Fail-closed: Privileged operations strictly require service role client)
     let supabase: any;
     try {
       supabase = getServiceRoleClient();
     } catch {
-      supabase = await createServerSupabaseClient();
+      return NextResponse.json(
+        {
+          data: null,
+          error: {
+            code: 'PRIVILEGED_SERVICE_UNAVAILABLE',
+            message: 'Server-only privileged client is not configured.',
+          },
+        },
+        { status: 503 }
+      );
     }
 
-    // 4. One-time lockout check: Verify whether an admin profile already exists
+    // 4. One-time lockout pre-check: Verify whether an admin profile already exists
     const { data: existingAdmin, error: adminCheckError } = await supabase
       .from('profiles')
       .select('id')
@@ -116,10 +124,9 @@ export async function POST(req: Request) {
       );
     }
 
-    // 5. Execute privileged admin bootstrap
+    // 5. Execute privileged admin bootstrap with atomic concurrency serialization
     const secretHash = crypto.createHash('sha256').update(serverBootstrapSecret).digest('hex');
 
-    // Attempt RPC first
     const { error: rpcError } = await supabase.rpc('bootstrap_admin_user', {
       target_user_id: targetUserId,
       bootstrap_secret: providedSecret,
@@ -153,31 +160,17 @@ export async function POST(req: Request) {
         );
       }
 
-      // If RPC fails due to RLS/function permissions, attempt direct service-role upsert
-      const { error: directUpsertError } = await supabase
-        .from('profiles')
-        .upsert({
-          id: targetUserId,
-          display_name: body.displayName?.trim() || 'System Administrator',
-          role: 'admin',
-          is_verified: true,
-          verified_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        });
-
-      if (directUpsertError) {
-        console.error('Failed to bootstrap admin user:', directUpsertError);
-        return NextResponse.json(
-          {
-            data: null,
-            error: {
-              code: 'BOOTSTRAP_FAILED',
-              message: 'Failed to initialize administrative account.',
-            },
+      console.error('Failed to bootstrap admin user:', rpcError);
+      return NextResponse.json(
+        {
+          data: null,
+          error: {
+            code: 'BOOTSTRAP_FAILED',
+            message: 'Failed to initialize administrative account.',
           },
-          { status: 500 }
-        );
-      }
+        },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json(

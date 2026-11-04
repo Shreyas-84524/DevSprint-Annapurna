@@ -12,6 +12,8 @@ import {
   confirmPhoneVerification,
   getVerificationRecord,
   resetVerificationStores,
+  setTestVerificationClient,
+  createTestVerificationDb,
 } from '../src/server/verification';
 import { POST as sendCodeHandler } from '../src/app/api/verification/send-code/route';
 import { POST as verifyCodeHandler } from '../src/app/api/verification/verify-code/route';
@@ -24,6 +26,7 @@ const MOCK_CONFIG: SwiftConfig = {
 describe('Swift SMS Verification Suite', () => {
   beforeEach(() => {
     resetVerificationStores();
+    setTestVerificationClient(createTestVerificationDb());
   });
 
   describe('1. Phone Number Normalization', () => {

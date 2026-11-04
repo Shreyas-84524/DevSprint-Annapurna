@@ -5,6 +5,16 @@ if (typeof window !== 'undefined') {
 }
 
 let serviceRoleClient: SupabaseClient | null = null;
+let testServiceRoleClientOverride: any = null;
+
+export function setTestServiceRoleClient(client: any) {
+  testServiceRoleClientOverride = client;
+}
+
+export function resetTestServiceRoleClient() {
+  testServiceRoleClientOverride = null;
+  serviceRoleClient = null;
+}
 
 /**
  * Returns a server-only privileged Supabase client authenticated with the service role key.
@@ -15,6 +25,10 @@ let serviceRoleClient: SupabaseClient | null = null;
  * Never import or execute this on the client or in browser bundles.
  */
 export function getServiceRoleClient(): SupabaseClient {
+  if (testServiceRoleClientOverride) {
+    return testServiceRoleClientOverride;
+  }
+
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
