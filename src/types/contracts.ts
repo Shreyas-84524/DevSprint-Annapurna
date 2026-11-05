@@ -450,3 +450,7 @@ export interface DeliveryEventDTO {
   idempotencyKey?: string | null;
   createdAt: string;
 }
+
+// Convenience Type Aliases
+export type ListingSummaryDTO = PublicListingSummaryDTO;
+export type AvailableTaskDTO = VolunteerTaskSummaryDTO;
