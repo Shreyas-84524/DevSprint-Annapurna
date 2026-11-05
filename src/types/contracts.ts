@@ -1,7 +1,7 @@
 /**
  * Annapurna Shared API Contracts & Data Transfer Objects
  *
- * Status: Canonical Stage 2 backend contract source.
+ * Status: Canonical backend contract source.
  * Backend is the designated sole editor for this file.
  * See docs/architecture/API_CONTRACTS.md for API conventions and specs.
  */
@@ -154,4 +154,299 @@ export interface RouteCalculationDTO {
   };
   travelMode: string;
   provider: 'geoapify';
+}
+
+// 10. Food Listing Types & Contracts
+export type FoodType = 'veg' | 'non-veg' | 'vegan' | 'other';
+export const FOOD_TYPES: readonly FoodType[] = ['veg', 'non-veg', 'vegan', 'other'] as const;
+
+export type ListingStatus =
+  | 'draft'
+  | 'published'
+  | 'claimed'
+  | 'in_delivery'
+  | 'completed'
+  | 'expired'
+  | 'cancelled'
+  | 'rejected_qc';
+
+export const LISTING_STATUSES: readonly ListingStatus[] = [
+  'draft',
+  'published',
+  'claimed',
+  'in_delivery',
+  'completed',
+  'expired',
+  'cancelled',
+  'rejected_qc',
+] as const;
+
+export interface CreateListingRequest {
+  title: string;
+  description?: string | null;
+  quantity: number;
+  unit: string;
+  foodType: FoodType;
+  dietaryTags?: string[];
+  expiresAt: string;
+  pickupLocationId?: string | null;
+  preparedImageToken?: string;
+  publishImmediately?: boolean;
+}
+
+export interface UpdateListingRequest {
+  rowVersion: number;
+  title?: string;
+  description?: string | null;
+  quantity?: number;
+  unit?: string;
+  foodType?: FoodType;
+  dietaryTags?: string[];
+  expiresAt?: string;
+  pickupLocationId?: string | null;
+}
+
+export interface ListingImageDTO {
+  id: string;
+  listingId: string;
+  storagePath: string;
+  fileName: string;
+  fileSizeBytes: number;
+  mimeType: string;
+  displayOrder: number;
+  createdAt: string;
+}
+
+export interface ListingDTO {
+  id: string;
+  donorId: string;
+  title: string;
+  description: string | null;
+  quantity: number;
+  unit: string;
+  foodType: FoodType;
+  dietaryTags: string[];
+  status: ListingStatus;
+  expiresAt: string;
+  pickupLocationId: string | null;
+  generalArea: string | null;
+  rowVersion: number;
+  imageUrl?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PublicListingSummaryDTO {
+  id: string;
+  title: string;
+  description: string | null;
+  quantity: number;
+  unit: string;
+  foodType: FoodType;
+  dietaryTags: string[];
+  expiresAt: string;
+  area?: string | null;
+  city?: string | null;
+  distanceKm?: number;
+  imageUrl?: string | null;
+}
+
+export interface ListingPickupDetailsDTO {
+  id: string;
+  listingId: string;
+  pickupLocationId: string | null;
+  pickupAddress: string;
+  addressLine2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  postalCode?: string | null;
+  latitude: number;
+  longitude: number;
+  pickupInstructions?: string | null;
+  contactPhone: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ListingDetailDTO {
+  listing: ListingDTO;
+  pickupDetails?: ListingPickupDetailsDTO | null;
+  images?: ListingImageDTO[];
+}
+
+// 11. Claim Contracts
+export type ClaimStatus = 'active' | 'cancelled' | 'fulfilled';
+export const CLAIM_STATUSES: readonly ClaimStatus[] = ['active', 'cancelled', 'fulfilled'] as const;
+
+export interface ClaimListingRequest {
+  deliveryLocationId?: string;
+  dropoffAddress?: string;
+  dropoffLatitude?: number;
+  dropoffLongitude?: number;
+  dropoffInstructions?: string;
+  dropoffContactPhone?: string;
+}
+
+export interface ClaimDTO {
+  id: string;
+  listingId: string;
+  requesterId: string;
+  status: ClaimStatus;
+  deliveryLocationId: string | null;
+  dropoffAddress: string;
+  dropoffLatitude: number;
+  dropoffLongitude: number;
+  dropoffInstructions?: string | null;
+  dropoffContactPhone: string;
+  idempotencyKey?: string | null;
+  claimedAt: string;
+  cancelledAt?: string | null;
+  fulfilledAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ClaimResponseDTO {
+  claimId: string;
+  deliveryId: string;
+  listingId: string;
+  status: 'claimed';
+  replayed?: boolean;
+}
+
+// 12. Delivery Contracts
+export type DeliveryStatus =
+  | 'awaiting_volunteer'
+  | 'assigned'
+  | 'at_pickup'
+  | 'qc_passed'
+  | 'qc_failed'
+  | 'collected'
+  | 'en_route_dropoff'
+  | 'handed_over'
+  | 'receipt_confirmed'
+  | 'cancelled';
+
+export const DELIVERY_STATUSES: readonly DeliveryStatus[] = [
+  'awaiting_volunteer',
+  'assigned',
+  'at_pickup',
+  'qc_passed',
+  'qc_failed',
+  'collected',
+  'en_route_dropoff',
+  'handed_over',
+  'receipt_confirmed',
+  'cancelled',
+] as const;
+
+export const TERMINAL_DELIVERY_STATES: readonly DeliveryStatus[] = [
+  'qc_failed',
+  'receipt_confirmed',
+  'cancelled',
+] as const;
+
+export interface VolunteerTaskSummaryDTO {
+  deliveryId: string;
+  listingId: string;
+  foodTitle: string;
+  quantity: number;
+  unit: string;
+  foodType: FoodType;
+  pickupArea: string;
+  dropoffArea: string;
+  distanceKm?: number;
+  expiresAt: string;
+  status: DeliveryStatus;
+}
+
+export interface AcceptDeliveryTaskRequest {
+  deliveryId?: string;
+}
+
+export interface AcceptDeliveryResponseDTO {
+  deliveryId: string;
+  volunteerId: string;
+  status: 'assigned';
+  replayed?: boolean;
+}
+
+export interface DeliveryDTO {
+  id: string;
+  listingId: string;
+  claimId: string;
+  donorId: string;
+  requesterId: string;
+  volunteerId: string | null;
+  status: DeliveryStatus;
+  assignedAt: string | null;
+  atPickupAt: string | null;
+  qcPassedAt: string | null;
+  qcFailedAt: string | null;
+  collectedAt: string | null;
+  enRouteDropoffAt: string | null;
+  handedOverAt: string | null;
+  confirmedReceiptAt: string | null;
+  cancelledAt: string | null;
+  cancellationReason: string | null;
+  rowVersion: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DeliveryDetailDTO {
+  id: string;
+  listingId: string;
+  claimId: string;
+  status: DeliveryStatus;
+  rowVersion: number;
+  donor: {
+    id: string;
+    displayName: string;
+    phone?: string;
+  };
+  requester: {
+    id: string;
+    displayName: string;
+    phone?: string;
+  };
+  volunteer?: {
+    id: string;
+    displayName: string;
+    phone?: string;
+  } | null;
+  listing: ListingDTO;
+  pickupLocation?: {
+    label?: string;
+    address: string;
+    latitude: number;
+    longitude: number;
+    instructions?: string | null;
+    contactPhone?: string;
+  };
+  dropoffLocation?: {
+    label?: string;
+    address: string;
+    latitude: number;
+    longitude: number;
+    instructions?: string | null;
+    contactPhone?: string;
+  };
+  assignedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DeliveryEventDTO {
+  id: string;
+  deliveryId: string;
+  actorId: string;
+  actorRole: string;
+  fromStatus: string | null;
+  toStatus: string;
+  eventName: string;
+  reason?: string | null;
+  metadata?: Record<string, any>;
+  idempotencyKey?: string | null;
+  createdAt: string;
 }

@@ -14,6 +14,312 @@ export type Database = {
   }
   public: {
     Tables: {
+      claims: {
+        Row: {
+          cancelled_at: string | null
+          claimed_at: string
+          created_at: string
+          delivery_location_id: string | null
+          dropoff_address: string
+          dropoff_contact_phone: string
+          dropoff_instructions: string | null
+          dropoff_latitude: number
+          dropoff_longitude: number
+          fulfilled_at: string | null
+          id: string
+          idempotency_key: string | null
+          listing_id: string
+          requester_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          cancelled_at?: string | null
+          claimed_at?: string
+          created_at?: string
+          delivery_location_id?: string | null
+          dropoff_address: string
+          dropoff_contact_phone: string
+          dropoff_instructions?: string | null
+          dropoff_latitude: number
+          dropoff_longitude: number
+          fulfilled_at?: string | null
+          id?: string
+          idempotency_key?: string | null
+          listing_id: string
+          requester_id: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          cancelled_at?: string | null
+          claimed_at?: string
+          created_at?: string
+          delivery_location_id?: string | null
+          dropoff_address?: string
+          dropoff_contact_phone?: string
+          dropoff_instructions?: string | null
+          dropoff_latitude?: number
+          dropoff_longitude?: number
+          fulfilled_at?: string | null
+          id?: string
+          idempotency_key?: string | null
+          listing_id?: string
+          requester_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      deliveries: {
+        Row: {
+          assigned_at: string | null
+          at_pickup_at: string | null
+          cancellation_reason: string | null
+          cancelled_at: string | null
+          claim_id: string
+          collected_at: string | null
+          confirmed_receipt_at: string | null
+          created_at: string
+          donor_id: string
+          en_route_dropoff_at: string | null
+          handed_over_at: string | null
+          id: string
+          listing_id: string
+          qc_failed_at: string | null
+          qc_passed_at: string | null
+          requester_id: string
+          row_version: number
+          status: string
+          updated_at: string
+          volunteer_id: string | null
+        }
+        Insert: {
+          assigned_at?: string | null
+          at_pickup_at?: string | null
+          cancellation_reason?: string | null
+          cancelled_at?: string | null
+          claim_id: string
+          collected_at?: string | null
+          confirmed_receipt_at?: string | null
+          created_at?: string
+          donor_id: string
+          en_route_dropoff_at?: string | null
+          handed_over_at?: string | null
+          id?: string
+          listing_id: string
+          qc_failed_at?: string | null
+          qc_passed_at?: string | null
+          requester_id: string
+          row_version?: number
+          status?: string
+          updated_at?: string
+          volunteer_id?: string | null
+        }
+        Update: {
+          assigned_at?: string | null
+          at_pickup_at?: string | null
+          cancellation_reason?: string | null
+          cancelled_at?: string | null
+          claim_id?: string
+          collected_at?: string | null
+          confirmed_receipt_at?: string | null
+          created_at?: string
+          donor_id?: string
+          en_route_dropoff_at?: string | null
+          handed_over_at?: string | null
+          id?: string
+          listing_id?: string
+          qc_failed_at?: string | null
+          qc_passed_at?: string | null
+          requester_id?: string
+          row_version?: number
+          status?: string
+          updated_at?: string
+          volunteer_id?: string | null
+        }
+        Relationships: []
+      }
+      delivery_events: {
+        Row: {
+          actor_id: string
+          actor_role: string
+          created_at: string
+          delivery_id: string
+          event_name: string
+          from_status: string | null
+          id: string
+          idempotency_key: string | null
+          metadata: Json
+          reason: string | null
+          to_status: string
+        }
+        Insert: {
+          actor_id: string
+          actor_role: string
+          created_at?: string
+          delivery_id: string
+          event_name: string
+          from_status?: string | null
+          id?: string
+          idempotency_key?: string | null
+          metadata?: Json
+          reason?: string | null
+          to_status: string
+        }
+        Update: {
+          actor_id?: string
+          actor_role?: string
+          created_at?: string
+          delivery_id?: string
+          event_name?: string
+          from_status?: string | null
+          id?: string
+          idempotency_key?: string | null
+          metadata?: Json
+          reason?: string | null
+          to_status?: string
+        }
+        Relationships: []
+      }
+      food_listings: {
+        Row: {
+          created_at: string
+          description: string | null
+          dietary_tags: string[]
+          donor_id: string
+          expires_at: string
+          food_type: string
+          general_area: string | null
+          id: string
+          pickup_location_id: string | null
+          quantity: number
+          row_version: number
+          status: string
+          title: string
+          unit: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          dietary_tags?: string[]
+          donor_id: string
+          expires_at: string
+          food_type: string
+          general_area?: string | null
+          id?: string
+          pickup_location_id?: string | null
+          quantity: number
+          row_version?: number
+          status?: string
+          title: string
+          unit: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          dietary_tags?: string[]
+          donor_id?: string
+          expires_at?: string
+          food_type?: string
+          general_area?: string | null
+          id?: string
+          pickup_location_id?: string | null
+          quantity?: number
+          row_version?: number
+          status?: string
+          title?: string
+          unit?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      listing_images: {
+        Row: {
+          created_at: string
+          display_order: number
+          file_name: string
+          file_size_bytes: number
+          id: string
+          listing_id: string
+          mime_type: string
+          storage_path: string
+        }
+        Insert: {
+          created_at?: string
+          display_order?: number
+          file_name: string
+          file_size_bytes: number
+          id?: string
+          listing_id: string
+          mime_type: string
+          storage_path: string
+        }
+        Update: {
+          created_at?: string
+          display_order?: number
+          file_name?: string
+          file_size_bytes?: number
+          id?: string
+          listing_id?: string
+          mime_type?: string
+          storage_path?: string
+        }
+        Relationships: []
+      }
+      listing_pickup_details: {
+        Row: {
+          address_line2: string | null
+          city: string | null
+          contact_phone: string
+          created_at: string
+          id: string
+          latitude: number
+          listing_id: string
+          longitude: number
+          pickup_address: string
+          pickup_instructions: string | null
+          pickup_location_id: string | null
+          postal_code: string | null
+          state: string | null
+          updated_at: string
+        }
+        Insert: {
+          address_line2?: string | null
+          city?: string | null
+          contact_phone: string
+          created_at?: string
+          id?: string
+          latitude: number
+          listing_id: string
+          longitude: number
+          pickup_address: string
+          pickup_instructions?: string | null
+          pickup_location_id?: string | null
+          postal_code?: string | null
+          state?: string | null
+          updated_at?: string
+        }
+        Update: {
+          address_line2?: string | null
+          city?: string | null
+          contact_phone?: string
+          created_at?: string
+          id?: string
+          latitude?: number
+          listing_id?: string
+          longitude?: number
+          pickup_address?: string
+          pickup_instructions?: string | null
+          pickup_location_id?: string | null
+          postal_code?: string | null
+          state?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string
@@ -213,6 +519,22 @@ export type Database = {
       }
     }
     Functions: {
+      accept_delivery_task: {
+        Args: {
+          p_delivery_id: string
+          p_idempotency_key?: string | null
+          p_volunteer_id: string
+        }
+        Returns: Json
+      }
+      accept_delivery_task_tx: {
+        Args: {
+          p_delivery_id: string
+          p_idempotency_key?: string | null
+          p_volunteer_id: string
+        }
+        Returns: Json
+      }
       bootstrap_admin_user: {
         Args: {
           p_display_name?: string
@@ -226,6 +548,24 @@ export type Database = {
           p_user_id: string
         }
         Returns: boolean
+      }
+      claim_food_listing: {
+        Args: {
+          p_delivery_location_id?: string | null
+          p_idempotency_key?: string | null
+          p_listing_id: string
+          p_requester_id: string
+        }
+        Returns: Json
+      }
+      claim_food_listing_tx: {
+        Args: {
+          p_delivery_location_id?: string | null
+          p_idempotency_key?: string | null
+          p_listing_id: string
+          p_requester_id: string
+        }
+        Returns: Json
       }
       complete_onboarding_tx: {
         Args: {
