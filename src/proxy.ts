@@ -1,16 +1,84 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+interface RouteProfile {
+  role: string;
+  is_verified: boolean;
+}
+
+export function getProtectedRouteRedirect(
+  path: string,
+  profile: RouteProfile | null
+): string | null;
+export function getProtectedRouteRedirect(
+  pathname: string,
+  user: any,
+  profile: RouteProfile | null,
+  isConfigured?: boolean
+): string | null;
+export function getProtectedRouteRedirect(
+  path: string,
+  arg2: any,
+  arg3?: any,
+  arg4?: any
+): string | null {
+  let profile: RouteProfile | null = null;
+  if (arg3 !== undefined || typeof arg4 === 'boolean') {
+    profile = arg3 ?? null;
+  } else {
+    profile = arg2 ?? null;
+  }
+
+  if (!profile) return '/onboarding';
+
+  const homeRoute = profile.role === 'donor'
+    ? (profile.is_verified ? '/dashboard/donor' : '/onboarding')
+    : profile.role === 'requester'
+      ? (profile.is_verified ? '/dashboard/beneficiary' : '/onboarding')
+      : profile.role === 'volunteer'
+        ? '/dashboard/volunteer'
+        : '/admin';
+
+  if (path.startsWith('/admin')) {
+    return profile.role === 'admin' ? null : homeRoute;
+  }
+  if (path.startsWith('/dashboard/donor')) {
+    return profile.role === 'donor' && profile.is_verified ? null : homeRoute;
+  }
+  if (path.startsWith('/dashboard/beneficiary')) {
+    return profile.role === 'requester' && profile.is_verified ? null : homeRoute;
+  }
+  if (path.startsWith('/dashboard/volunteer')) {
+    return profile.role === 'volunteer' ? null : homeRoute;
+  }
+  return null;
+}
+
 export async function proxy(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
     request,
   });
 
+  const path = request.nextUrl.pathname;
+  const isProtectedRoute =
+    path.startsWith('/dashboard') ||
+    path.startsWith('/admin');
+
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!supabaseUrl || !supabaseAnonKey) {
-    // Fail closed if Supabase credentials are missing
+    if (isProtectedRoute) {
+      return NextResponse.json(
+        {
+          error: {
+            code: 'AUTH_CONFIGURATION_UNAVAILABLE',
+            message: 'Authentication is temporarily unavailable.',
+          },
+        },
+        { status: 503 }
+      );
+    }
     return supabaseResponse;
   }
 
@@ -38,129 +106,72 @@ export async function proxy(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const path = request.nextUrl.pathname;
-
-  const isProtectedRoute =
-    path.startsWith("/dashboard") ||
-    path.startsWith("/admin");
-
   const isAuthRoute =
-    path.startsWith("/login") ||
-    path.startsWith("/register");
+    path.startsWith('/login') ||
+    path.startsWith('/register');
 
   // 1. Unauthenticated users cannot access protected dashboards
   if (isProtectedRoute && !user) {
     const url = request.nextUrl.clone();
-    url.pathname = "/login";
+    url.pathname = '/login';
     return NextResponse.redirect(url);
   }
 
   // 2. Authenticated user route enforcement
-  if (user && (isProtectedRoute || path === "/onboarding" || isAuthRoute)) {
+  if (user && (isProtectedRoute || path === '/onboarding' || isAuthRoute)) {
     const { data: profile } = await supabase
-      .from("profiles")
-      .select("role, is_verified")
-      .eq("id", user.id)
+      .from('profiles')
+      .select('role, is_verified')
+      .eq('id', user.id)
       .maybeSingle();
 
-    // A. Admin route protection
-    if (path.startsWith("/admin")) {
-      if (!profile || profile.role !== "admin") {
+    if (isProtectedRoute) {
+      const redirectPath = getProtectedRouteRedirect(path, profile);
+      if (redirectPath) {
         const url = request.nextUrl.clone();
-        url.pathname = profile ? (
-          profile.role === "donor" ? (profile.is_verified ? "/dashboard/donor" : "/onboarding") :
-          profile.role === "requester" ? (profile.is_verified ? "/dashboard/beneficiary" : "/onboarding") :
-          profile.role === "volunteer" ? "/dashboard/volunteer" : "/login"
-        ) : "/onboarding";
+        url.pathname = redirectPath;
         return NextResponse.redirect(url);
       }
     }
 
-    // B. Dashboard route protection & verification enforcement
-    if (path.startsWith("/dashboard")) {
-      if (!profile) {
+    // Onboarding route protection: allow incomplete or unverified profiles to stay on /onboarding
+    if (path === '/onboarding' && profile) {
+      if (profile.role === 'admin') {
         const url = request.nextUrl.clone();
-        url.pathname = "/onboarding";
+        url.pathname = '/admin';
         return NextResponse.redirect(url);
       }
-
-      // Donor dashboard: requires role === 'donor' AND is_verified === true
-      if (path.startsWith("/dashboard/donor")) {
-        if (profile.role !== "donor") {
-          const url = request.nextUrl.clone();
-          url.pathname = profile.role === "requester" ? (profile.is_verified ? "/dashboard/beneficiary" : "/onboarding") :
-            profile.role === "volunteer" ? "/dashboard/volunteer" : "/admin";
-          return NextResponse.redirect(url);
-        }
-        if (!profile.is_verified) {
-          const url = request.nextUrl.clone();
-          url.pathname = "/onboarding";
-          return NextResponse.redirect(url);
-        }
-      }
-
-      // Requester dashboard: requires role === 'requester' AND is_verified === true
-      if (path.startsWith("/dashboard/beneficiary")) {
-        if (profile.role !== "requester") {
-          const url = request.nextUrl.clone();
-          url.pathname = profile.role === "donor" ? (profile.is_verified ? "/dashboard/donor" : "/onboarding") :
-            profile.role === "volunteer" ? "/dashboard/volunteer" : "/admin";
-          return NextResponse.redirect(url);
-        }
-        if (!profile.is_verified) {
-          const url = request.nextUrl.clone();
-          url.pathname = "/onboarding";
-          return NextResponse.redirect(url);
-        }
-      }
-
-      // Volunteer dashboard: requires role === 'volunteer' (no phone verification required)
-      if (path.startsWith("/dashboard/volunteer") && profile.role !== "volunteer") {
+      if (profile.role === 'volunteer') {
         const url = request.nextUrl.clone();
-        url.pathname = profile.role === "donor" ? (profile.is_verified ? "/dashboard/donor" : "/onboarding") :
-          profile.role === "requester" ? (profile.is_verified ? "/dashboard/beneficiary" : "/onboarding") : "/admin";
+        url.pathname = '/dashboard/volunteer';
         return NextResponse.redirect(url);
       }
-    }
-
-    // C. Onboarding route protection: allow incomplete or unverified profiles to stay on /onboarding
-    if (path === "/onboarding" && profile) {
-      if (profile.role === "admin") {
+      if (profile.role === 'donor' && profile.is_verified) {
         const url = request.nextUrl.clone();
-        url.pathname = "/admin";
+        url.pathname = '/dashboard/donor';
         return NextResponse.redirect(url);
       }
-      if (profile.role === "volunteer") {
+      if (profile.role === 'requester' && profile.is_verified) {
         const url = request.nextUrl.clone();
-        url.pathname = "/dashboard/volunteer";
-        return NextResponse.redirect(url);
-      }
-      if (profile.role === "donor" && profile.is_verified) {
-        const url = request.nextUrl.clone();
-        url.pathname = "/dashboard/donor";
-        return NextResponse.redirect(url);
-      }
-      if (profile.role === "requester" && profile.is_verified) {
-        const url = request.nextUrl.clone();
-        url.pathname = "/dashboard/beneficiary";
+        url.pathname = '/dashboard/beneficiary';
         return NextResponse.redirect(url);
       }
       // If donor or requester is NOT verified, DO NOT redirect; let them complete verification on /onboarding!
     }
 
-    // D. Auth route redirect for already signed in users
+    // Auth route redirect for already signed in users
     if (isAuthRoute) {
       const url = request.nextUrl.clone();
       if (!profile) {
-        url.pathname = "/onboarding";
-      } else if (profile.role === "admin") {
-        url.pathname = "/admin";
-      } else if (profile.role === "volunteer") {
-        url.pathname = "/dashboard/volunteer";
-      } else if (profile.role === "donor") {
-        url.pathname = profile.is_verified ? "/dashboard/donor" : "/onboarding";
-      } else if (profile.role === "requester") {
-        url.pathname = profile.is_verified ? "/dashboard/beneficiary" : "/onboarding";
+        url.pathname = '/onboarding';
+      } else if (profile.role === 'admin') {
+        url.pathname = '/admin';
+      } else if (profile.role === 'volunteer') {
+        url.pathname = '/dashboard/volunteer';
+      } else if (profile.role === 'donor') {
+        url.pathname = profile.is_verified ? '/dashboard/donor' : '/onboarding';
+      } else if (profile.role === 'requester') {
+        url.pathname = profile.is_verified ? '/dashboard/beneficiary' : '/onboarding';
       }
       return NextResponse.redirect(url);
     }

@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { getServiceRoleClient } from '@/lib/supabase-admin';
-import { createClient as createServerSupabaseClient } from '@/lib/supabase-server';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -87,47 +86,48 @@ export async function POST(req: Request) {
       );
     }
 
-    // 3. Resolve privileged client
-    let supabase: any;
-    try {
-      supabase = getServiceRoleClient();
-    } catch {
-      supabase = await createServerSupabaseClient();
-    }
+    const displayName = typeof body.displayName === 'string'
+      ? body.displayName.trim()
+      : 'System Administrator';
 
-    // 4. One-time lockout check: Verify whether an admin profile already exists
-    const { data: existingAdmin, error: adminCheckError } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('role', 'admin')
-      .limit(1)
-      .maybeSingle();
-
-    if (!adminCheckError && existingAdmin) {
+    if (displayName.length < 2 || displayName.length > 100) {
       return NextResponse.json(
         {
           data: null,
           error: {
-            code: 'ADMIN_ALREADY_EXISTS',
-            message: 'An administrator account already exists. Repeat bootstrap execution is prohibited.',
+            code: 'INVALID_DISPLAY_NAME',
+            message: 'displayName must be between 2 and 100 characters.',
           },
         },
-        { status: 409 }
+        { status: 400 }
       );
     }
 
-    // 5. Execute privileged admin bootstrap
-    const secretHash = crypto.createHash('sha256').update(serverBootstrapSecret).digest('hex');
+    // 3. Require the privileged server-only client.
+    let supabase;
+    try {
+      supabase = getServiceRoleClient();
+    } catch {
+      return NextResponse.json(
+        {
+          data: null,
+          error: {
+            code: 'PRIVILEGED_DATABASE_NOT_CONFIGURED',
+            message: 'Administrative bootstrap is unavailable on this server.',
+          },
+        },
+        { status: 503 }
+      );
+    }
 
-    // Attempt RPC first
+    // 4. The database function serializes concurrent first-admin attempts.
     const { error: rpcError } = await supabase.rpc('bootstrap_admin_user', {
-      target_user_id: targetUserId,
-      bootstrap_secret: providedSecret,
-      expected_secret_hash: secretHash,
+      p_target_user_id: targetUserId,
+      p_display_name: displayName,
     });
 
     if (rpcError) {
-      if (rpcError.message?.includes('already exists')) {
+      if (rpcError.message?.includes('ADMIN_ALREADY_EXISTS')) {
         return NextResponse.json(
           {
             data: null,
@@ -140,7 +140,7 @@ export async function POST(req: Request) {
         );
       }
 
-      if (rpcError.message?.includes('not found in auth')) {
+      if (rpcError.message?.includes('USER_NOT_FOUND')) {
         return NextResponse.json(
           {
             data: null,
@@ -153,31 +153,17 @@ export async function POST(req: Request) {
         );
       }
 
-      // If RPC fails due to RLS/function permissions, attempt direct service-role upsert
-      const { error: directUpsertError } = await supabase
-        .from('profiles')
-        .upsert({
-          id: targetUserId,
-          display_name: body.displayName?.trim() || 'System Administrator',
-          role: 'admin',
-          is_verified: true,
-          verified_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        });
-
-      if (directUpsertError) {
-        console.error('Failed to bootstrap admin user:', directUpsertError);
-        return NextResponse.json(
-          {
-            data: null,
-            error: {
-              code: 'BOOTSTRAP_FAILED',
-              message: 'Failed to initialize administrative account.',
-            },
+      console.error('Failed to bootstrap admin user:', rpcError);
+      return NextResponse.json(
+        {
+          data: null,
+          error: {
+            code: 'BOOTSTRAP_FAILED',
+            message: 'Failed to initialize administrative account.',
           },
-          { status: 500 }
-        );
-      }
+        },
+        { status: 500 }
+      );
     }
 
     return NextResponse.json(

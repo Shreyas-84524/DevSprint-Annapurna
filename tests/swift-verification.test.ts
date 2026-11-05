@@ -10,11 +10,11 @@ import {
 import {
   initiatePhoneVerification,
   confirmPhoneVerification,
-  getVerificationRecord,
-  resetVerificationStores,
+  getVerificationRecordAsync,
 } from '../src/server/verification';
 import { POST as sendCodeHandler } from '../src/app/api/verification/send-code/route';
 import { POST as verifyCodeHandler } from '../src/app/api/verification/verify-code/route';
+import { InMemoryVerificationClient } from './helpers/verification-client';
 
 const MOCK_CONFIG: SwiftConfig = {
   baseUrl: 'https://mock-swift.local',
@@ -22,8 +22,10 @@ const MOCK_CONFIG: SwiftConfig = {
 };
 
 describe('Swift SMS Verification Suite', () => {
+  let verificationClient: InMemoryVerificationClient;
+
   beforeEach(() => {
-    resetVerificationStores();
+    verificationClient = new InMemoryVerificationClient();
   });
 
   describe('1. Phone Number Normalization', () => {
@@ -304,6 +306,7 @@ describe('Swift SMS Verification Suite', () => {
           userId,
           phone: '+919876543210',
           customConfig: MOCK_CONFIG,
+          customClient: verificationClient,
         });
 
         assert.equal(sendResult.requestId, 'req-life-1');
@@ -314,13 +317,14 @@ describe('Swift SMS Verification Suite', () => {
           userId,
           otp: '123456',
           customConfig: MOCK_CONFIG,
+          customClient: verificationClient,
         });
 
         assert.equal(verifyResult.verified, true);
         assert.equal(verifyResult.phone, '+919876543210');
 
         // Check authoritative verification record was saved
-        const record = getVerificationRecord(userId);
+        const record = await getVerificationRecordAsync(userId, verificationClient);
         assert.ok(record);
         assert.equal(record?.status, 'verified');
         assert.equal(record?.phone, '+919876543210');
@@ -350,6 +354,7 @@ describe('Swift SMS Verification Suite', () => {
           userId,
           phone: '+919876543210',
           customConfig: MOCK_CONFIG,
+          customClient: verificationClient,
         });
 
         // Immediate second send must trigger COOLDOWN_ACTIVE (429)
@@ -359,6 +364,7 @@ describe('Swift SMS Verification Suite', () => {
               userId,
               phone: '+919876543210',
               customConfig: MOCK_CONFIG,
+              customClient: verificationClient,
             }),
           (err: SwiftError) => {
             assert.equal(err.code, 'COOLDOWN_ACTIVE');
@@ -399,6 +405,7 @@ describe('Swift SMS Verification Suite', () => {
           userId,
           phone: '+919876543210',
           customConfig: MOCK_CONFIG,
+          customClient: verificationClient,
         });
 
         // 1st verify succeeds
@@ -406,6 +413,7 @@ describe('Swift SMS Verification Suite', () => {
           userId,
           otp: '123456',
           customConfig: MOCK_CONFIG,
+          customClient: verificationClient,
         });
 
         // 2nd verify with same challenge must be rejected with CHALLENGE_ALREADY_CONSUMED
@@ -416,10 +424,11 @@ describe('Swift SMS Verification Suite', () => {
               otp: '123456',
               requestId: 'req-replay-1',
               customConfig: MOCK_CONFIG,
+              customClient: verificationClient,
             }),
           (err: SwiftError) => {
             assert.equal(err.code, 'CHALLENGE_ALREADY_CONSUMED');
-            assert.equal(err.status, 400);
+            assert.equal(err.status, 409);
             return true;
           }
         );
@@ -448,6 +457,7 @@ describe('Swift SMS Verification Suite', () => {
           userId: 'user-A',
           phone: '+919876543210',
           customConfig: MOCK_CONFIG,
+          customClient: verificationClient,
         });
 
         // User B attempts to verify with User A's requestId
@@ -458,6 +468,7 @@ describe('Swift SMS Verification Suite', () => {
               otp: '123456',
               requestId: 'req-user-a',
               customConfig: MOCK_CONFIG,
+              customClient: verificationClient,
             }),
           (err: SwiftError) => {
             assert.equal(err.code, 'CHALLENGE_NOT_FOUND');
@@ -495,6 +506,7 @@ describe('Swift SMS Verification Suite', () => {
             phone,
             idempotencyKey: `burst_${i}`,
             customConfig: MOCK_CONFIG,
+            customClient: verificationClient,
           });
         }
 
@@ -506,6 +518,7 @@ describe('Swift SMS Verification Suite', () => {
               phone,
               idempotencyKey: 'burst_6',
               customConfig: MOCK_CONFIG,
+              customClient: verificationClient,
             }),
           (err: SwiftError) => {
             assert.equal(err.code, 'HOURLY_LIMIT_EXCEEDED');
