@@ -149,6 +149,53 @@ export async function createListing(
   const contactPhone = profile.phone || '+919000000000';
   const initialStatus: ListingStatus = input.publishImmediately ? 'published' : 'draft';
 
+  // Production uses one database transaction for the listing, private pickup
+  // details, and optional prepared image registration. Injected clients retain
+  // the explicit query path below for deterministic unit-test fixtures.
+  if (!customClient) {
+    const { data, error } = await supabase.rpc('create_food_listing', {
+      p_donor_id: donorId,
+      p_title: trimmedTitle,
+      p_description: input.description?.trim() || null,
+      p_quantity: quantity,
+      p_unit: trimmedUnit,
+      p_food_type: input.foodType,
+      p_dietary_tags: input.dietaryTags || [],
+      p_expires_at: expiryDate.toISOString(),
+      p_pickup_location_id: location.id,
+      p_publish_immediately: input.publishImmediately === true,
+      p_prepared_image_token: input.preparedImageToken || null,
+    });
+
+    if (error || !data) {
+      const code = error?.message?.includes('INVALID_IMAGE') ? 'INVALID_IMAGE_TOKEN' :
+        error?.message?.includes('LOCATION_NOT_FOUND') ? 'LOCATION_NOT_FOUND' : 'INSERT_LISTING_FAILED';
+      const status = code === 'INVALID_IMAGE_TOKEN' ? 400 : code === 'LOCATION_NOT_FOUND' ? 404 : 500;
+      throw new ListingWorkflowError(error?.message || 'Failed to create food listing.', code, status);
+    }
+
+    return {
+      id: data.id,
+      donorId: data.donor_id,
+      title: data.title,
+      description: data.description,
+      quantity: Number(data.quantity),
+      unit: data.unit,
+      foodType: data.food_type as FoodType,
+      dietaryTags: data.dietary_tags || [],
+      status: data.status as ListingStatus,
+      expiresAt: data.expires_at,
+      pickupLocationId: data.pickup_location_id,
+      generalArea: data.general_area,
+      rowVersion: data.row_version,
+      imageUrl: input.preparedImageToken
+        ? `/storage/v1/object/public/listing-images/${input.preparedImageToken}`
+        : null,
+      createdAt: data.created_at,
+      updatedAt: data.updated_at,
+    };
+  }
+
   // 4. Insert into food_listings
   const { data: newListing, error: insertErr } = await supabase
     .from('food_listings')
@@ -358,21 +405,70 @@ export async function updateListing(
     updates.pickup_location_id = locData.id;
     updates.general_area = locData.city || locData.label || 'Pickup Area';
 
-    // Update pickup details
-    await supabase
-      .from('listing_pickup_details')
-      .update({
-        pickup_location_id: locData.id,
-        pickup_address: locData.address || locData.label,
-        address_line2: locData.address_line2 || null,
-        city: locData.city || null,
-        state: locData.state || null,
-        postal_code: locData.postal_code || null,
-        latitude: locData.latitude,
-        longitude: locData.longitude,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('listing_id', listingId);
+    if (customClient) {
+      await supabase
+        .from('listing_pickup_details')
+        .update({
+          pickup_location_id: locData.id,
+          pickup_address: locData.address || locData.label,
+          address_line2: locData.address_line2 || null,
+          city: locData.city || null,
+          state: locData.state || null,
+          postal_code: locData.postal_code || null,
+          latitude: locData.latitude,
+          longitude: locData.longitude,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('listing_id', listingId);
+    }
+  }
+
+  if (!customClient) {
+    const changes: Record<string, any> = {};
+    if (input.title !== undefined) changes.title = updates.title;
+    if (input.description !== undefined) changes.description = updates.description;
+    if (input.quantity !== undefined) changes.quantity = updates.quantity;
+    if (input.unit !== undefined) changes.unit = updates.unit;
+    if (input.foodType !== undefined) changes.foodType = updates.food_type;
+    if (input.dietaryTags !== undefined) changes.dietaryTags = updates.dietary_tags;
+    if (input.expiresAt !== undefined) changes.expiresAt = updates.expires_at;
+    if (input.pickupLocationId !== undefined) changes.pickupLocationId = input.pickupLocationId;
+
+    const { data, error } = await supabase.rpc('update_food_listing', {
+      p_listing_id: listingId,
+      p_donor_id: donorId,
+      p_expected_version: input.rowVersion,
+      p_changes: changes,
+    });
+
+    if (error || !data) {
+      const message = error?.message || '';
+      if (message.includes('STALE_OR_NOT_EDITABLE') || error?.code === '40001') {
+        throw new ListingWorkflowError('Listing changed or is no longer editable.', 'STALE_ROW_VERSION', 409);
+      }
+      if (message.includes('LOCATION_NOT_FOUND')) {
+        throw new ListingWorkflowError('Pickup location not found.', 'LOCATION_NOT_FOUND', 404);
+      }
+      throw new ListingWorkflowError(message || 'Failed to update food listing.', 'UPDATE_LISTING_FAILED', 500);
+    }
+
+    return {
+      id: data.id,
+      donorId: data.donor_id,
+      title: data.title,
+      description: data.description,
+      quantity: Number(data.quantity),
+      unit: data.unit,
+      foodType: data.food_type as FoodType,
+      dietaryTags: data.dietary_tags || [],
+      status: data.status as ListingStatus,
+      expiresAt: data.expires_at,
+      pickupLocationId: data.pickup_location_id,
+      generalArea: data.general_area,
+      rowVersion: data.row_version,
+      createdAt: data.created_at,
+      updatedAt: data.updated_at,
+    };
   }
 
   updates.row_version = listing.row_version + 1;
@@ -670,6 +766,9 @@ export async function claimListing(
     }
     if (msg.includes('UNAUTHORIZED_REQUESTER') || error.code === '42501') {
       throw new ListingWorkflowError('Caller is not an authorized requester.', 'UNAUTHORIZED_REQUESTER', 403);
+    }
+    if (msg.includes('IDEMPOTENCY_KEY_REUSED')) {
+      throw new ListingWorkflowError('Idempotency key was reused for a different claim.', 'IDEMPOTENCY_KEY_REUSED', 409);
     }
 
     throw new ListingWorkflowError(error.message || 'Failed to claim food listing.', 'CLAIM_FAILED', 500);

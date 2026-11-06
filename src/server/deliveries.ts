@@ -12,6 +12,11 @@ import {
   AcceptDeliveryResponseDTO,
   DeliveryDetailDTO,
   DeliveryStatus,
+  DeliveryAction,
+  DeliveryTransitionRequest,
+  DeliveryTransitionResponseDTO,
+  DeliveryLocationInput,
+  DeliveryLocationDTO,
   FoodType,
   ListingStatus,
 } from '@/types/contracts';
@@ -86,9 +91,7 @@ export async function getAvailableVolunteerTasks(
       continue;
     }
 
-    const dropoffArea = claim?.dropoff_address
-      ? claim.dropoff_address.split(',')[0].trim()
-      : 'Dropoff Area';
+    const dropoffArea = claim?.dropoff_area || 'Recipient service area';
 
     tasks.push({
       deliveryId: d.id,
@@ -135,24 +138,8 @@ export async function acceptDeliveryTask(
     throw new DeliveryWorkflowError('Only volunteers can accept delivery tasks.', 'UNAUTHORIZED_VOLUNTEER', 403);
   }
 
-  // 2. Fast check: is this delivery already assigned to this volunteer (replay)?
-  const { data: existingAssignment } = await supabase
-    .from('deliveries')
-    .select('id, volunteer_id, status')
-    .eq('id', deliveryId)
-    .eq('volunteer_id', volunteerId)
-    .maybeSingle();
-
-  if (existingAssignment) {
-    return {
-      deliveryId: existingAssignment.id,
-      volunteerId,
-      status: 'assigned',
-      replayed: true,
-    };
-  }
-
-  // 3. Fast check: does volunteer already have an active non-terminal delivery?
+  // Fast capacity feedback; the database function repeats this check while
+  // holding the authoritative delivery lock.
   const { data: activeDeliveries } = await supabase
     .from('deliveries')
     .select('id')
@@ -169,7 +156,8 @@ export async function acceptDeliveryTask(
     );
   }
 
-  // 4. Invoke atomic stored procedure
+  // Invoke the atomic stored procedure. Replay semantics are decided there so
+  // the key must match the exact original command.
   const { data, error } = await supabase.rpc('accept_delivery_task', {
     p_delivery_id: deliveryId,
     p_volunteer_id: volunteerId,
@@ -204,6 +192,9 @@ export async function acceptDeliveryTask(
     }
     if (msg.includes('LISTING_EXPIRED')) {
       throw new DeliveryWorkflowError('Listing has expired.', 'LISTING_EXPIRED', 410);
+    }
+    if (msg.includes('IDEMPOTENCY_KEY_REUSED')) {
+      throw new DeliveryWorkflowError('Idempotency key was reused for a different assignment.', 'IDEMPOTENCY_KEY_REUSED', 409);
     }
 
     throw new DeliveryWorkflowError(error.message || 'Failed to accept delivery task.', 'ACCEPT_DELIVERY_FAILED', 500);
@@ -263,6 +254,8 @@ export async function getDeliveryDetail(
     { data: donorProfile },
     { data: requesterProfile },
     { data: volunteerProfile },
+    { data: qc },
+    { data: latestLocations },
   ] = await Promise.all([
     supabase.from('food_listings').select('*').eq('id', delivery.listing_id).maybeSingle(),
     supabase.from('listing_pickup_details').select('*').eq('listing_id', delivery.listing_id).maybeSingle(),
@@ -272,6 +265,12 @@ export async function getDeliveryDetail(
     delivery.volunteer_id
       ? supabase.from('profiles').select('id, display_name, phone').eq('id', delivery.volunteer_id).maybeSingle()
       : Promise.resolve({ data: null }),
+    customClient
+      ? Promise.resolve({ data: null })
+      : supabase.from('delivery_qc').select('result, notes, checked_at').eq('delivery_id', deliveryId).maybeSingle(),
+    customClient
+      ? Promise.resolve({ data: [] })
+      : supabase.from('delivery_locations').select('*').eq('delivery_id', deliveryId).order('sequence', { ascending: false }).limit(1),
   ]);
 
   if (!listing) {
@@ -337,7 +336,125 @@ export async function getDeliveryDetail(
         }
       : undefined,
     assignedAt: delivery.assigned_at,
+    allowedNextActions: allowedActionsFor(delivery, caller),
+    qc: qc ? {
+      result: qc.result,
+      notes: qc.notes,
+      checkedAt: qc.checked_at,
+    } : null,
+    latestLocation: latestLocations?.[0] ? mapLocation(latestLocations[0]) : null,
     createdAt: delivery.created_at,
     updatedAt: delivery.updated_at,
   };
+}
+
+function allowedActionsFor(delivery: any, caller: AuthenticatedUser): DeliveryAction[] {
+  const actions: DeliveryAction[] = [];
+  const isVolunteer = caller.id === delivery.volunteer_id;
+  const isRequester = caller.id === delivery.requester_id;
+  if (isVolunteer && delivery.status === 'assigned') actions.push('arrive_pickup');
+  if (isVolunteer && delivery.status === 'at_pickup') actions.push('qc');
+  if (isVolunteer && delivery.status === 'qc_passed') actions.push('collect');
+  if (isVolunteer && delivery.status === 'collected') actions.push('start_dropoff');
+  if (isVolunteer && delivery.status === 'en_route_dropoff') actions.push('handover');
+  if (isRequester && delivery.status === 'handed_over') actions.push('confirm_receipt');
+  if (!['qc_failed', 'receipt_confirmed', 'cancelled'].includes(delivery.status) && (
+    caller.id === delivery.donor_id || isRequester || isVolunteer || caller.role === 'admin'
+  )) actions.push('cancel');
+  return actions;
+}
+
+function mapLocation(row: any): DeliveryLocationDTO {
+  const ageSeconds = Math.max(0, Math.floor((Date.now() - new Date(row.captured_at).getTime()) / 1000));
+  return {
+    latitude: Number(row.latitude),
+    longitude: Number(row.longitude),
+    accuracyM: Number(row.accuracy_m),
+    capturedAt: row.captured_at,
+    sequence: Number(row.sequence),
+    ageSeconds,
+    stale: ageSeconds > 60,
+  };
+}
+
+export async function transitionDelivery(
+  deliveryId: string,
+  actor: AuthenticatedUser,
+  action: DeliveryAction,
+  input: DeliveryTransitionRequest,
+  idempotencyKey: string | null,
+  customClient?: any
+): Promise<DeliveryTransitionResponseDTO> {
+  const supabase = customClient || getServiceRoleClient();
+  if (!idempotencyKey || idempotencyKey.length < 8) {
+    throw new DeliveryWorkflowError('Idempotency-Key is required.', 'IDEMPOTENCY_KEY_REQUIRED', 400);
+  }
+  const payload: Record<string, any> = {};
+  if (input.result !== undefined) payload.result = input.result;
+  if (input.notes !== undefined) payload.notes = input.notes;
+  if (input.reason !== undefined) payload.reason = input.reason;
+  if (input.evidence !== undefined) payload.evidence = input.evidence;
+
+  const { data, error } = await supabase.rpc('transition_delivery', {
+    p_delivery_id: deliveryId,
+    p_actor_id: actor.id,
+    p_action: action,
+    p_payload: payload,
+    p_idempotency_key: idempotencyKey,
+    p_expected_version: input.rowVersion ?? null,
+  });
+  if (error || !data) {
+    const message = error?.message || '';
+    if (message.includes('DELIVERY_NOT_FOUND')) throw new DeliveryWorkflowError('Delivery not found.', 'DELIVERY_NOT_FOUND', 404);
+    if (message.includes('STALE_ROW_VERSION') || error?.code === '40001') throw new DeliveryWorkflowError('Delivery changed. Refresh and retry.', 'STALE_ROW_VERSION', 409);
+    if (message.includes('IDEMPOTENCY_KEY_REUSED')) throw new DeliveryWorkflowError('Idempotency key was reused for a different command.', 'IDEMPOTENCY_KEY_REUSED', 409);
+    if (message.includes('TRANSITION_FORBIDDEN') || error?.code === '42501') throw new DeliveryWorkflowError('This transition is not allowed for the caller or current state.', 'TRANSITION_FORBIDDEN', 403);
+    if (message.includes('INVALID_QC_RESULT') || message.includes('CANCELLATION_REASON_REQUIRED')) throw new DeliveryWorkflowError(message, 'INVALID_TRANSITION_INPUT', 400);
+    throw new DeliveryWorkflowError(message || 'Delivery transition failed.', 'TRANSITION_FAILED', 500);
+  }
+  return {
+    deliveryId: data.delivery_id,
+    status: data.status as DeliveryStatus,
+    rowVersion: Number(data.row_version),
+    replayed: data.replayed === true,
+  };
+}
+
+export async function recordDeliveryLocation(
+  deliveryId: string,
+  volunteerId: string,
+  input: DeliveryLocationInput,
+  customClient?: any
+): Promise<DeliveryLocationDTO> {
+  const supabase = customClient || getServiceRoleClient();
+  const { data, error } = await supabase.rpc('record_delivery_location', {
+    p_delivery_id: deliveryId,
+    p_volunteer_id: volunteerId,
+    p_latitude: input.lat,
+    p_longitude: input.lng,
+    p_accuracy_m: input.accuracyM,
+    p_captured_at: input.capturedAt,
+    p_sequence: input.sequence,
+  });
+  if (error || !data) {
+    const message = error?.message || '';
+    if (message.includes('DELIVERY_NOT_FOUND')) throw new DeliveryWorkflowError('Delivery not found.', 'DELIVERY_NOT_FOUND', 404);
+    if (message.includes('TRACKING_FORBIDDEN') || error?.code === '42501') throw new DeliveryWorkflowError('Location updates are not allowed.', 'TRACKING_FORBIDDEN', 403);
+    if (message.includes('LOCATION_RATE_LIMITED')) throw new DeliveryWorkflowError('Location updates are too frequent.', 'LOCATION_RATE_LIMITED', 429);
+    throw new DeliveryWorkflowError(message || 'Invalid location update.', 'INVALID_LOCATION', 400);
+  }
+  return mapLocation(data);
+}
+
+export async function getDeliveryTracking(
+  deliveryId: string,
+  caller: AuthenticatedUser,
+  customClient?: any
+): Promise<DeliveryLocationDTO | null> {
+  const supabase = customClient || getServiceRoleClient();
+  await getDeliveryDetail(deliveryId, caller, supabase);
+  const { data, error } = await supabase.from('delivery_locations').select('*')
+    .eq('delivery_id', deliveryId).order('sequence', { ascending: false }).limit(1);
+  if (error) throw new DeliveryWorkflowError('Could not load tracking.', 'TRACKING_FAILED', 500);
+  return data?.[0] ? mapLocation(data[0]) : null;
 }
