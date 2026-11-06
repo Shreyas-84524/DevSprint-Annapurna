@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { VolunteerTaskSummaryDTO, DeliveryDetailDTO } from "@/types/contracts";
+import DeliveryJourney from "@/components/delivery/DeliveryJourney";
 
 export default function VolunteerDashboard() {
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -365,6 +366,7 @@ export default function VolunteerDashboard() {
               </div>
             </div>
           </div>
+          <DeliveryJourney delivery={activeDelivery} role="volunteer" onRefresh={fetchActiveDelivery} />
         </div>
       )}
 

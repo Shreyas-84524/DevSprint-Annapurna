@@ -17,13 +17,15 @@ import {
   Truck,
 } from "lucide-react";
 import Link from "next/link";
-import { PublicListingSummaryDTO } from "@/types/contracts";
+import { DeliveryDetailDTO, PublicListingSummaryDTO } from "@/types/contracts";
+import DeliveryJourney from "@/components/delivery/DeliveryJourney";
 
 export default function RequesterDashboard() {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [userProfile, setUserProfile] = useState<any>(null);
   const [listings, setListings] = useState<PublicListingSummaryDTO[]>([]);
   const [myClaims, setMyClaims] = useState<any[]>([]);
+  const [activeDelivery, setActiveDelivery] = useState<DeliveryDetailDTO | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [filterType, setFilterType] = useState<string>("all");
   const [radiusKm, setRadiusKm] = useState<number>(15);
@@ -129,6 +131,11 @@ export default function RequesterDashboard() {
             unit,
             food_type,
             status
+          ),
+          deliveries (
+            id,
+            status,
+            row_version
           )
         `)
         .eq("requester_id", currentUser.id)
@@ -136,6 +143,16 @@ export default function RequesterDashboard() {
 
       if (!error && data) {
         setMyClaims(data);
+        const activeClaim = data.find((claim: any) => claim.status === "active" && claim.deliveries);
+        const deliveryRef = Array.isArray(activeClaim?.deliveries) ? activeClaim.deliveries[0] : activeClaim?.deliveries;
+        const deliveryId = deliveryRef?.id;
+        if (deliveryId) {
+          const response = await fetch(`/api/deliveries/${deliveryId}`);
+          const json = await response.json();
+          if (response.ok) setActiveDelivery(json.data);
+        } else {
+          setActiveDelivery(null);
+        }
       }
     } catch (err) {
       console.error("Error fetching claims:", err);
@@ -342,6 +359,13 @@ export default function RequesterDashboard() {
       </AnimatePresence>
 
       {/* My Active Claims Section */}
+      {activeDelivery && (
+        <div className="mb-10 p-6 bg-gradient-to-r from-brand-charcoal to-gray-800 text-white rounded-2xl shadow-lg">
+          <h2 className="text-xl font-bold">Your delivery journey</h2>
+          <p className="text-sm text-gray-300">Status: {activeDelivery.status.replaceAll("_", " ")}</p>
+          <DeliveryJourney delivery={activeDelivery} role="requester" onRefresh={fetchMyClaims} />
+        </div>
+      )}
       {myClaims.length > 0 && (
         <div className="mb-10">
           <h2 className="text-xl font-bold text-brand-charcoal mb-4 flex items-center gap-2">
