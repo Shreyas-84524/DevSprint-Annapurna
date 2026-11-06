@@ -433,6 +433,9 @@ export interface DeliveryDetailDTO {
     contactPhone?: string;
   };
   assignedAt?: string | null;
+  allowedNextActions?: DeliveryAction[];
+  qc?: DeliveryQcDTO | null;
+  latestLocation?: DeliveryLocationDTO | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -449,6 +452,61 @@ export interface DeliveryEventDTO {
   metadata?: Record<string, any>;
   idempotencyKey?: string | null;
   createdAt: string;
+}
+
+export type DeliveryAction =
+  | 'arrive_pickup'
+  | 'qc'
+  | 'collect'
+  | 'start_dropoff'
+  | 'handover'
+  | 'confirm_receipt'
+  | 'cancel';
+
+export interface DeliveryTransitionRequest {
+  rowVersion?: number;
+  result?: 'pass' | 'fail';
+  notes?: string;
+  reason?: string;
+  evidence?: Record<string, string | number | boolean | null>;
+}
+
+export interface DeliveryTransitionResponseDTO {
+  deliveryId: string;
+  status: DeliveryStatus;
+  rowVersion: number;
+  replayed: boolean;
+}
+
+export interface DeliveryQcDTO {
+  result: 'pass' | 'fail';
+  notes: string | null;
+  checkedAt: string;
+}
+
+export interface DeliveryLocationInput {
+  lat: number;
+  lng: number;
+  accuracyM: number;
+  capturedAt: string;
+  sequence: number;
+}
+
+export interface DeliveryLocationDTO {
+  latitude: number;
+  longitude: number;
+  accuracyM: number;
+  capturedAt: string;
+  sequence: number;
+  ageSeconds: number;
+  stale: boolean;
+}
+
+export interface DeliveryRouteDTO extends RouteCalculationDTO {
+  deliveryId: string;
+  leg: 'pickup' | 'dropoff';
+  cached: boolean;
+  providerTimestamp: string;
 }
 
 // Convenience Type Aliases

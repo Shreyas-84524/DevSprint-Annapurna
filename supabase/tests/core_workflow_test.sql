@@ -3,7 +3,7 @@ BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
 
-SELECT plan(40);
+SELECT plan(39);
 
 -- Fixture Users
 INSERT INTO auth.users (id, email)
@@ -104,6 +104,17 @@ SELECT ok(
 );
 
 -- 21-23. Schema Check Constraints
+-- The image constraint fixtures need a valid parent row so the intended check
+-- constraint, rather than the foreign key, is the first failing condition.
+INSERT INTO public.food_listings (
+  id, donor_id, title, quantity, unit, food_type, status, expires_at, general_area
+) VALUES (
+  '40000000-0000-4000-8000-000000000001',
+  '20000000-0000-4000-8000-000000000001',
+  'Fresh Dal Rice', 15, 'meals', 'veg', 'published',
+  now() + interval '3 hours', 'Dadar West'
+) ON CONFLICT (id) DO NOTHING;
+
 SELECT throws_ok(
   $$
     INSERT INTO public.food_listings (

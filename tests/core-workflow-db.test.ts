@@ -264,7 +264,9 @@ describe('Core Food Workflow Database & Contract Suite', () => {
     it('pgTAP test file exists and contains complete test plan', () => {
       assert.equal(fs.existsSync(testPath), true);
       const content = fs.readFileSync(testPath, 'utf8');
-      assert.match(content, /SELECT\s+plan\(40\);/i);
+      assert.match(content, /SELECT\s+plan\(39\);/i);
+      const assertions = content.match(/^SELECT\s+(?:has_table|ok|is_empty|results_eq|has_index|throws_ok|is)\s*\(/gim) || [];
+      assert.equal(assertions.length, 39);
       assert.match(content, /SELECT\s+\*\s+FROM\s+finish\(\);/i);
       assert.match(content, /ROLLBACK;/i);
     });

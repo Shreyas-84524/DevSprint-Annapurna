@@ -21,6 +21,7 @@ export type Database = {
           created_at: string
           delivery_location_id: string | null
           dropoff_address: string
+          dropoff_area: string | null
           dropoff_contact_phone: string
           dropoff_instructions: string | null
           dropoff_latitude: number
@@ -39,6 +40,7 @@ export type Database = {
           created_at?: string
           delivery_location_id?: string | null
           dropoff_address: string
+          dropoff_area?: string | null
           dropoff_contact_phone: string
           dropoff_instructions?: string | null
           dropoff_latitude: number
@@ -57,6 +59,7 @@ export type Database = {
           created_at?: string
           delivery_location_id?: string | null
           dropoff_address?: string
+          dropoff_area?: string | null
           dropoff_contact_phone?: string
           dropoff_instructions?: string | null
           dropoff_latitude?: number
@@ -140,6 +143,108 @@ export type Database = {
         }
         Relationships: []
       }
+      delivery_locations: {
+        Row: {
+          accuracy_m: number
+          captured_at: string
+          created_at: string
+          delivery_id: string
+          id: string
+          latitude: number
+          longitude: number
+          sequence: number
+          volunteer_id: string
+        }
+        Insert: {
+          accuracy_m: number
+          captured_at: string
+          created_at?: string
+          delivery_id: string
+          id?: string
+          latitude: number
+          longitude: number
+          sequence: number
+          volunteer_id: string
+        }
+        Update: {
+          accuracy_m?: number
+          captured_at?: string
+          created_at?: string
+          delivery_id?: string
+          id?: string
+          latitude?: number
+          longitude?: number
+          sequence?: number
+          volunteer_id?: string
+        }
+        Relationships: []
+      }
+      delivery_qc: {
+        Row: {
+          checked_at: string
+          delivery_id: string
+          notes: string | null
+          result: string
+          volunteer_id: string
+        }
+        Insert: {
+          checked_at?: string
+          delivery_id: string
+          notes?: string | null
+          result: string
+          volunteer_id: string
+        }
+        Update: {
+          checked_at?: string
+          delivery_id?: string
+          notes?: string | null
+          result?: string
+          volunteer_id?: string
+        }
+        Relationships: []
+      }
+      delivery_route_cache: {
+        Row: {
+          created_at: string
+          delivery_id: string
+          destination_latitude: number
+          destination_longitude: number
+          expires_at: string
+          leg: string
+          origin_latitude: number
+          origin_longitude: number
+          provider: string
+          route: Json
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          delivery_id: string
+          destination_latitude: number
+          destination_longitude: number
+          expires_at: string
+          leg: string
+          origin_latitude: number
+          origin_longitude: number
+          provider?: string
+          route: Json
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          delivery_id?: string
+          destination_latitude?: number
+          destination_longitude?: number
+          expires_at?: string
+          leg?: string
+          origin_latitude?: number
+          origin_longitude?: number
+          provider?: string
+          route?: Json
+          updated_at?: string
+        }
+        Relationships: []
+      }
       delivery_events: {
         Row: {
           actor_id: string
@@ -179,6 +284,36 @@ export type Database = {
           metadata?: Json
           reason?: string | null
           to_status?: string
+        }
+        Relationships: []
+      }
+      workflow_idempotency: {
+        Row: {
+          actor_id: string
+          command_name: string
+          created_at: string
+          idempotency_key: string
+          request_fingerprint: string
+          resource_id: string
+          response: Json
+        }
+        Insert: {
+          actor_id: string
+          command_name: string
+          created_at?: string
+          idempotency_key: string
+          request_fingerprint: string
+          resource_id: string
+          response: Json
+        }
+        Update: {
+          actor_id?: string
+          command_name?: string
+          created_at?: string
+          idempotency_key?: string
+          request_fingerprint?: string
+          resource_id?: string
+          response?: Json
         }
         Relationships: []
       }
@@ -567,6 +702,22 @@ export type Database = {
         }
         Returns: Json
       }
+      create_food_listing: {
+        Args: {
+          p_description: string | null
+          p_dietary_tags: string[]
+          p_donor_id: string
+          p_expires_at: string
+          p_food_type: string
+          p_pickup_location_id: string
+          p_prepared_image_token?: string | null
+          p_publish_immediately?: boolean
+          p_quantity: number
+          p_title: string
+          p_unit: string
+        }
+        Returns: Json
+      }
       complete_onboarding_tx: {
         Args: {
           p_address?: string | null
@@ -611,6 +762,38 @@ export type Database = {
         Args: {
           p_request_id: string
           p_user_id: string
+        }
+        Returns: Json
+      }
+      record_delivery_location: {
+        Args: {
+          p_accuracy_m: number
+          p_captured_at: string
+          p_delivery_id: string
+          p_latitude: number
+          p_longitude: number
+          p_sequence: number
+          p_volunteer_id: string
+        }
+        Returns: Json
+      }
+      transition_delivery: {
+        Args: {
+          p_action: string
+          p_actor_id: string
+          p_delivery_id: string
+          p_expected_version?: number | null
+          p_idempotency_key?: string | null
+          p_payload?: Json
+        }
+        Returns: Json
+      }
+      update_food_listing: {
+        Args: {
+          p_changes: Json
+          p_donor_id: string
+          p_expected_version: number
+          p_listing_id: string
         }
         Returns: Json
       }
