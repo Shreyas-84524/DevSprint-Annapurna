@@ -8,15 +8,70 @@ import {
 import {
   initiatePhoneVerification,
   confirmPhoneVerification,
-  resetVerificationStores,
 } from '../src/server/verification';
 import { POST as adminBootstrapHandler } from '../src/app/api/admin/bootstrap/route';
+import { InMemoryVerificationClient } from './helpers/verification-client';
 
 // Mock in-memory Supabase database for isolated unit testing
 class MockSupabaseDB {
   public profiles = new Map<string, any>();
   public savedLocations = new Map<string, any>();
   public volunteerPreferences = new Map<string, any>();
+
+  rpc = async (name: string, args: Record<string, any>) => {
+    if (name !== 'complete_onboarding_tx') {
+      return { data: null, error: { message: `UNKNOWN_RPC:${name}` } };
+    }
+    if (this.profiles.has(args.p_user_id)) {
+      return { data: null, error: { code: '23505', message: 'PROFILE_ALREADY_EXISTS' } };
+    }
+
+    const now = new Date().toISOString();
+    const profile = {
+      id: args.p_user_id,
+      display_name: args.p_display_name,
+      role: args.p_role,
+      is_verified: args.p_role === 'volunteer',
+      phone: null,
+      verified_at: args.p_role === 'volunteer' ? now : null,
+      created_at: now,
+      updated_at: now,
+    };
+    const location = {
+      id: 'loc_' + Math.random().toString(36).substring(2),
+      user_id: args.p_user_id,
+      label: args.p_location_label,
+      address: args.p_address,
+      latitude: args.p_latitude,
+      longitude: args.p_longitude,
+      is_default: true,
+      created_at: now,
+      updated_at: now,
+    };
+    const preferences = args.p_role === 'volunteer'
+      ? {
+          user_id: args.p_user_id,
+          vehicle_type: args.p_vehicle_type,
+          max_distance_km: args.p_max_distance_km,
+          is_available: true,
+          created_at: now,
+          updated_at: now,
+        }
+      : null;
+
+    this.profiles.set(profile.id, profile);
+    this.savedLocations.set(location.id, location);
+    if (preferences) this.volunteerPreferences.set(preferences.user_id, preferences);
+
+    return {
+      data: {
+        profile,
+        location,
+        volunteer_preferences: preferences,
+      },
+      error: null,
+    };
+  };
 
   from = (table: string) => {
     return {
@@ -121,12 +176,13 @@ class MockSupabaseDB {
   };
 }
 
-describe('Annapurna Phase 2 — Onboarding & Foundation Suite', () => {
+describe('Annapurna — Onboarding & Foundation Suite', () => {
   let mockDb: MockSupabaseDB;
+  let verificationClient: InMemoryVerificationClient;
 
   beforeEach(() => {
     mockDb = new MockSupabaseDB();
-    resetVerificationStores();
+    verificationClient = new InMemoryVerificationClient();
   });
 
   describe('1. Canonical Role Creation & Constraints', () => {
@@ -552,6 +608,7 @@ describe('Annapurna Phase 2 — Onboarding & Foundation Suite', () => {
           userId: 'user_lifecycle_1',
           phone: '+919876543210',
           customConfig: MOCK_CONFIG,
+          customClient: verificationClient,
         });
 
         assert.equal(sendResult.status, 'QUEUED');
@@ -562,6 +619,7 @@ describe('Annapurna Phase 2 — Onboarding & Foundation Suite', () => {
           userId: 'user_lifecycle_1',
           otp: '123456',
           customConfig: MOCK_CONFIG,
+          customClient: verificationClient,
         });
 
         assert.equal(verifyResult.verified, true);

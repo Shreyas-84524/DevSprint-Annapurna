@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase";
+import { createClient, isSupabaseConfigured } from "@/lib/supabase";
 import {
   HeartHandshake,
   Utensils,
@@ -14,17 +14,41 @@ import {
   AlertCircle,
   CheckCircle2,
   Navigation,
+  MapPin,
+  LogIn,
+  AlertTriangle,
 } from "lucide-react";
 import { OnboardingRole } from "@/types/contracts";
 
+// Common city coordinate presets for manual entry fallback
+const CITY_PRESETS = [
+  { name: "Mumbai", lat: 19.076, lng: 72.8777 },
+  { name: "Delhi", lat: 28.6139, lng: 77.209 },
+  { name: "Bengaluru", lat: 12.9716, lng: 77.5946 },
+  { name: "Kolkata", lat: 22.5726, lng: 88.3639 },
+  { name: "Chennai", lat: 13.0827, lng: 80.2707 },
+  { name: "Hyderabad", lat: 17.385, lng: 78.4867 },
+];
+
 export default function OnboardingPage() {
   const router = useRouter();
-  const supabase = createClient();
+
+  // Fail-closed Supabase client initialization
+  const isConfigured = isSupabaseConfigured();
+  const supabase = useMemo(() => {
+    if (!isConfigured) return null;
+    try {
+      return createClient();
+    } catch {
+      return null;
+    }
+  }, [isConfigured]);
 
   // Step state: 1 = Role & Profile, 2 = Location & Preferences, 3 = Phone Verification (Donors/Requesters only)
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [sessionExpired, setSessionExpired] = useState(false);
   const [generalError, setGeneralError] = useState("");
 
   // Form Fields
@@ -38,6 +62,8 @@ export default function OnboardingPage() {
   const [longitude, setLongitude] = useState<number | null>(null);
   const [gpsLoading, setGpsLoading] = useState(false);
   const [gpsError, setGpsError] = useState("");
+  const [permissionDenied, setPermissionDenied] = useState(false);
+  const [manualEntryMode, setManualEntryMode] = useState(false);
 
   // Volunteer Preference Fields
   const [vehicleType, setVehicleType] = useState<string>("motorcycle");
@@ -47,6 +73,7 @@ export default function OnboardingPage() {
   const [countryCode, setCountryCode] = useState("+91");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [otpCode, setOtpCode] = useState("");
+  const [otpSending, setOtpSending] = useState(false);
   const [otpSent, setOtpSent] = useState(false);
   const [otpCooldown, setOtpCooldown] = useState(0);
   const [otpError, setOtpError] = useState("");
@@ -54,41 +81,68 @@ export default function OnboardingPage() {
   const [attemptsRemaining, setAttemptsRemaining] = useState<number | null>(null);
 
   // Check auth state and existing profile on load
-  useEffect(() => {
-    async function checkAuth() {
-      try {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (!user) {
-          router.replace("/login");
+  const checkAuth = useCallback(async () => {
+    setLoading(true);
+    setGeneralError("");
+    setSessionExpired(false);
+
+    if (!supabase) {
+      setGeneralError("Authentication service is not configured. Please check public environment variables.");
+      setLoading(false);
+      return;
+    }
+
+    try {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) {
+        setSessionExpired(true);
+        setLoading(false);
+        return;
+      }
+
+      // Fetch /api/me to check profile and onboarding completion
+      const res = await fetch("/api/me");
+      if (res.status === 401) {
+        setSessionExpired(true);
+        setLoading(false);
+        return;
+      }
+
+      if (res.ok) {
+        const json = await res.json();
+        const me = json?.data;
+        if (me?.onboardingComplete) {
+          router.replace(me.dashboardRoute || "/");
           return;
         }
 
-        // Fetch /api/me to see if profile already exists
-        const res = await fetch("/api/me");
-        if (res.ok) {
-          const json = await res.json();
-          if (json?.data?.onboardingComplete) {
-            router.replace(json.data.dashboardRoute);
-            return;
+        if (me?.role) {
+          setSelectedRole(me.role);
+          if (me.displayName) setDisplayName(me.displayName);
+          if (me.defaultLocation) {
+            setLocationLabel(me.defaultLocation.label || "Home");
+            setAddress(me.defaultLocation.address || "");
+            setLatitude(me.defaultLocation.latitude ?? null);
+            setLongitude(me.defaultLocation.longitude ?? null);
           }
-          if (json?.data?.role) {
-            // Role already set, if donor/requester not verified, skip to step 3
-            if (!json.data.isVerified && json.data.role !== "volunteer") {
-              setSelectedRole(json.data.role);
-              setDisplayName(json.data.displayName || "");
-              setStep(3);
-            }
+
+          // If role is set and donor/requester is not yet verified, advance to Step 3
+          if (!me.isVerified && me.role !== "volunteer") {
+            setStep(3);
           }
         }
-      } catch (err) {
-        console.error("Failed to check auth state:", err);
-      } finally {
-        setLoading(false);
       }
+    } catch (err: any) {
+      console.error("Failed to check auth state:", err);
+      setGeneralError("Unable to verify account status. Please check your network connection.");
+    } finally {
+      setLoading(false);
     }
-
-    checkAuth();
   }, [router, supabase]);
+
+  useEffect(() => {
+    checkAuth();
+  }, [checkAuth]);
 
   // Resend countdown timer
   useEffect(() => {
@@ -99,31 +153,61 @@ export default function OnboardingPage() {
     return () => clearInterval(interval);
   }, [otpCooldown]);
 
-  // Request GPS Location
-  const handleRequestGps = () => {
-    if (!navigator.geolocation) {
-      setGpsError("Geolocation is not supported by your browser. Please enter location manually.");
+  // Request GPS Location with permission detection & manual entry fallback
+  const handleRequestGps = useCallback(() => {
+    if (typeof window === "undefined" || !navigator.geolocation) {
+      setPermissionDenied(true);
+      setManualEntryMode(true);
+      setGpsError("Geolocation is not supported by your browser. Please enter your location details manually.");
       return;
     }
 
     setGpsLoading(true);
     setGpsError("");
+    setPermissionDenied(false);
 
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setLatitude(pos.coords.latitude);
         setLongitude(pos.coords.longitude);
         setGpsLoading(false);
+        setPermissionDenied(false);
+        setGpsError("");
         if (!address) {
-          setAddress(`GPS Coordinates (${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)})`);
+          setAddress(`GPS Location (${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)})`);
         }
       },
       (err) => {
         setGpsLoading(false);
-        setGpsError(err.message || "Location access denied or unavailable. Please enter address manually.");
+        if (err.code === 1) {
+          // GeolocationPositionError.PERMISSION_DENIED
+          setPermissionDenied(true);
+          setManualEntryMode(true);
+          setGpsError("Location permission was denied. Please enter your location details manually below.");
+        } else if (err.code === 2) {
+          // POSITION_UNAVAILABLE
+          setManualEntryMode(true);
+          setGpsError("Location information is currently unavailable. Please enter details manually.");
+        } else if (err.code === 3) {
+          // TIMEOUT
+          setGpsError("Location request timed out. Please retry or enter details manually.");
+        } else {
+          setGpsError(err.message || "Unable to retrieve GPS coordinates. Please enter manually.");
+        }
       },
       { timeout: 10000, enableHighAccuracy: true }
     );
+  }, [address]);
+
+  // City preset selection for manual entry fallback
+  const handleSelectCityPreset = (city: { name: string; lat: number; lng: number }) => {
+    setLatitude(city.lat);
+    setLongitude(city.lng);
+    setGpsError("");
+    setPermissionDenied(false);
+    if (!address) {
+      setAddress(`${city.name}, India`);
+    }
   };
 
   // Step 1: Proceed to Location
@@ -131,7 +215,8 @@ export default function OnboardingPage() {
     e.preventDefault();
     setGeneralError("");
 
-    if (!displayName.trim() || displayName.trim().length < 2) {
+    const trimmed = displayName.trim();
+    if (!trimmed || trimmed.length < 2) {
       setGeneralError("Please enter your name (at least 2 characters).");
       return;
     }
@@ -139,24 +224,46 @@ export default function OnboardingPage() {
     setStep(2);
   };
 
-  // Step 2: Complete Profile Creation & Route (or go to OTP verification)
+  // Step 2: Complete Profile Creation & Route (or advance to OTP verification)
   const handleCompleteStep2 = async (e: React.FormEvent) => {
     e.preventDefault();
     setGeneralError("");
-    setSubmitting(true);
 
-    // Fallback coordinates if manual entry without GPS (e.g. Mumbai center)
-    const finalLat = latitude ?? 19.076;
-    const finalLng = longitude ?? 72.8777;
+    // Validate location label
+    const trimmedLabel = locationLabel.trim();
+    if (!trimmedLabel) {
+      setGeneralError("Please provide a label for your location (e.g. Home, Kitchen, Shelter).");
+      return;
+    }
+
+    // Validate address
+    const trimmedAddress = address.trim();
+    if (!trimmedAddress) {
+      setGeneralError("Please enter an address or landmark for your location.");
+      return;
+    }
+
+    // Validate coordinates
+    if (latitude === null || longitude === null || isNaN(latitude) || isNaN(longitude)) {
+      setGeneralError("Valid location coordinates are required. Detect your GPS or enter coordinates manually.");
+      return;
+    }
+
+    if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+      setGeneralError("Coordinates out of valid range: Latitude must be between -90 and 90, Longitude between -180 and 180.");
+      return;
+    }
+
+    setSubmitting(true);
 
     const payload = {
       displayName: displayName.trim(),
       role: selectedRole,
       location: {
-        label: locationLabel.trim() || "Primary Location",
-        address: address.trim() || null,
-        latitude: finalLat,
-        longitude: finalLng,
+        label: trimmedLabel,
+        address: trimmedAddress,
+        latitude,
+        longitude,
       },
       volunteerPreferences:
         selectedRole === "volunteer"
@@ -174,22 +281,42 @@ export default function OnboardingPage() {
         body: JSON.stringify(payload),
       });
 
-      const json = await res.json();
-
-      if (!res.ok) {
-        throw new Error(json?.error?.message || "Failed to save profile.");
-      }
-
-      // If volunteer, onboarding is complete!
-      if (selectedRole === "volunteer") {
-        router.replace("/dashboard/volunteer");
+      if (res.status === 401) {
+        setSessionExpired(true);
         return;
       }
 
-      // If donor or requester, proceed to Step 3 (Phone OTP Verification)
+      const json = await res.json();
+
+      if (!res.ok) {
+        // If profile already exists, route to dashboard or check status
+        if (json?.error?.code === "PROFILE_ALREADY_EXISTS") {
+          const meRes = await fetch("/api/me");
+          if (meRes.ok) {
+            const meJson = await meRes.json();
+            if (meJson?.data?.onboardingComplete) {
+              router.replace(meJson.data.dashboardRoute);
+              return;
+            }
+            if (!meJson?.data?.isVerified && meJson?.data?.role !== "volunteer") {
+              setStep(3);
+              return;
+            }
+          }
+        }
+        throw new Error(json?.error?.message || "Failed to save profile. Please try again.");
+      }
+
+      // Volunteer onboarding completes immediately with no extra OTP or approval gates
+      if (selectedRole === "volunteer") {
+        router.replace(json?.data?.dashboardRoute || "/dashboard/volunteer");
+        return;
+      }
+
+      // Donor and requester advance to Step 3 for phone OTP verification
       setStep(3);
     } catch (err: any) {
-      setGeneralError(err.message || "An unexpected error occurred.");
+      setGeneralError(err.message || "An unexpected error occurred while saving profile.");
     } finally {
       setSubmitting(false);
     }
@@ -198,20 +325,27 @@ export default function OnboardingPage() {
   // Step 3: Send OTP Code
   const handleSendOtp = async () => {
     setOtpError("");
-    const fullPhone = `${countryCode}${phoneNumber.replace(/\D/g, "")}`;
+    const cleaned = phoneNumber.replace(/\D/g, "");
 
-    if (phoneNumber.replace(/\D/g, "").length < 7) {
-      setOtpError("Please enter a valid phone number.");
+    if (cleaned.length < 7) {
+      setOtpError("Please enter a valid phone number with at least 7 digits.");
       return;
     }
 
-    setSubmitting(true);
+    const fullPhone = `${countryCode}${cleaned}`;
+    setOtpSending(true);
+
     try {
       const res = await fetch("/api/verification/send-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone: fullPhone }),
       });
+
+      if (res.status === 401) {
+        setSessionExpired(true);
+        return;
+      }
 
       const json = await res.json();
       if (!res.ok) {
@@ -223,7 +357,7 @@ export default function OnboardingPage() {
     } catch (err: any) {
       setOtpError(err.message || "Failed to send verification code. Please try again.");
     } finally {
-      setSubmitting(false);
+      setOtpSending(false);
     }
   };
 
@@ -233,7 +367,8 @@ export default function OnboardingPage() {
     setOtpError("");
     setSubmitting(true);
 
-    if (!otpCode.trim() || otpCode.trim().length < 4) {
+    const trimmedCode = otpCode.trim();
+    if (!trimmedCode || trimmedCode.length < 4) {
       setOtpError("Please enter the verification code received via SMS.");
       setSubmitting(false);
       return;
@@ -243,8 +378,13 @@ export default function OnboardingPage() {
       const res = await fetch("/api/verification/verify-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: otpCode.trim() }),
+        body: JSON.stringify({ code: trimmedCode }),
       });
+
+      if (res.status === 401) {
+        setSessionExpired(true);
+        return;
+      }
 
       const json = await res.json();
 
@@ -256,26 +396,62 @@ export default function OnboardingPage() {
       }
 
       setOtpSuccess(true);
+
+      // Route according to canonical role
       setTimeout(() => {
         if (selectedRole === "donor") {
           router.replace("/dashboard/donor");
         } else {
           router.replace("/dashboard/beneficiary");
         }
-      }, 1500);
+      }, 1200);
     } catch (err: any) {
-      setOtpError(err.message || "Verification failed.");
+      setOtpError(err.message || "Verification failed. Please check your code.");
     } finally {
       setSubmitting(false);
     }
   };
 
+  // Initial Loading View
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-brand-slate">
+      <div className="min-h-screen flex items-center justify-center bg-brand-slate px-4">
         <div className="flex flex-col items-center gap-3">
-          <div className="w-8 h-8 border-4 border-brand-gold border-t-transparent rounded-full animate-spin"></div>
-          <p className="text-sm font-medium text-gray-600">Loading your profile...</p>
+          <div className="w-10 h-10 border-4 border-brand-gold border-t-transparent rounded-full animate-spin"></div>
+          <p className="text-sm font-medium text-gray-600">Verifying your account details...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Session-Expired View
+  if (sessionExpired) {
+    return (
+      <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 bg-brand-slate">
+        <div className="max-w-md w-full bg-brand-white rounded-3xl shadow-xl overflow-hidden border border-red-200 p-8 text-center">
+          <div className="w-16 h-16 bg-red-100 text-red-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <LogIn size={32} />
+          </div>
+          <h2 className="text-2xl font-bold text-brand-charcoal mb-2">Session Expired</h2>
+          <p className="text-sm text-gray-600 mb-6">
+            Your login session is either expired or missing. Please sign in to your account to complete your profile setup.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <button
+              onClick={() => router.push("/login")}
+              className="flex-1 py-3.5 bg-brand-charcoal text-white rounded-xl font-bold hover:bg-gray-800 transition-colors flex items-center justify-center gap-2"
+            >
+              <LogIn size={18} />
+              <span>Go to Sign In</span>
+            </button>
+            <button
+              onClick={checkAuth}
+              className="px-5 py-3.5 border border-gray-200 text-gray-700 rounded-xl font-bold hover:bg-gray-50 transition-colors flex items-center justify-center gap-2"
+            >
+              <RefreshCw size={16} />
+              <span>Retry</span>
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -312,10 +488,20 @@ export default function OnboardingPage() {
           </div>
         </div>
 
+        {/* Global Error Notice with Retry */}
         {generalError && (
-          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl flex items-start gap-3 text-red-600 text-sm">
-            <AlertCircle size={18} className="shrink-0 mt-0.5" />
-            <span>{generalError}</span>
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-xl flex items-start justify-between gap-3 text-red-600 text-sm">
+            <div className="flex items-start gap-3">
+              <AlertCircle size={18} className="shrink-0 mt-0.5" />
+              <span>{generalError}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setGeneralError("")}
+              className="text-xs font-bold text-red-700 hover:underline shrink-0"
+            >
+              Dismiss
+            </button>
           </div>
         )}
 
@@ -357,7 +543,7 @@ export default function OnboardingPage() {
                     <p className="text-xs text-gray-500">Donate surplus meals from home, catering, or restaurants.</p>
                   </div>
                   <span className="text-[10px] font-bold mt-4 uppercase text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded-full inline-block w-fit">
-                    Requires SMS OTP
+                    Requires Phone OTP
                   </span>
                 </div>
 
@@ -376,7 +562,7 @@ export default function OnboardingPage() {
                     <p className="text-xs text-gray-500">Request food for families, communities, or shelters.</p>
                   </div>
                   <span className="text-[10px] font-bold mt-4 uppercase text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded-full inline-block w-fit">
-                    Requires SMS OTP
+                    Requires Phone OTP
                   </span>
                 </div>
 
@@ -395,7 +581,7 @@ export default function OnboardingPage() {
                     <p className="text-xs text-gray-500">Pick up donations and deliver them locally.</p>
                   </div>
                   <span className="text-[10px] font-bold mt-4 uppercase text-green-700 bg-green-100 px-2 py-0.5 rounded-full inline-block w-fit">
-                    Instant Setup (No OTP)
+                    Instant Access (No OTP)
                   </span>
                 </div>
               </div>
@@ -417,38 +603,73 @@ export default function OnboardingPage() {
             <div>
               <h2 className="text-2xl font-bold text-brand-charcoal mb-1">Set Your Base Location</h2>
               <p className="text-gray-500 text-sm">
-                Used to match you with nearby food donations and deliveries.
+                A saved location is required to coordinate food redistribution within your service area.
               </p>
             </div>
 
-            {/* GPS or Manual Selector */}
-            <div className="bg-gray-50 p-4 rounded-2xl border border-gray-200">
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 mb-3">
+            {/* GPS Detection & Status Box */}
+            <div className="bg-gray-50 p-5 rounded-2xl border border-gray-200 space-y-4">
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
                 <button
                   type="button"
                   onClick={handleRequestGps}
                   disabled={gpsLoading}
-                  className="px-4 py-2.5 bg-brand-gold text-brand-charcoal font-bold rounded-xl text-sm hover:bg-yellow-500 transition-colors flex items-center justify-center gap-2"
+                  className="px-4 py-2.5 bg-brand-gold text-brand-charcoal font-bold rounded-xl text-sm hover:bg-yellow-500 transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
                 >
-                  <Navigation size={16} />
-                  <span>{gpsLoading ? "Detecting GPS..." : "Detect Current GPS"}</span>
+                  {gpsLoading ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-brand-charcoal border-t-transparent rounded-full animate-spin"></div>
+                      <span>Detecting Location...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Navigation size={16} />
+                      <span>{permissionDenied || gpsError ? "Retry GPS Detection" : "Detect Current GPS"}</span>
+                    </>
+                  )}
                 </button>
-                {latitude && longitude && (
-                  <span className="text-xs text-green-700 font-bold bg-green-100 px-3 py-1.5 rounded-full flex items-center gap-1">
+
+                {latitude !== null && longitude !== null && !isNaN(latitude) && !isNaN(longitude) && (
+                  <span className="text-xs text-green-700 font-bold bg-green-100 px-3 py-1.5 rounded-full flex items-center gap-1 self-start sm:self-auto">
                     <CheckCircle2 size={14} />
                     <span>Coordinates Captured ({latitude.toFixed(4)}, {longitude.toFixed(4)})</span>
                   </span>
                 )}
               </div>
 
-              {gpsError && (
-                <p className="text-xs text-red-500 mb-2">{gpsError}</p>
+              {/* Permission Denied Notice */}
+              {permissionDenied && (
+                <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2.5 text-amber-800 text-xs">
+                  <AlertTriangle size={16} className="shrink-0 mt-0.5 text-amber-600" />
+                  <div>
+                    <span className="font-bold">Location Permission Denied: </span>
+                    <span>Browser location access was blocked. Please enter your address and coordinates manually below, or select a city preset.</span>
+                  </div>
+                </div>
               )}
 
-              <div className="mb-3">
-                <label className="block text-xs font-bold text-gray-600 mb-1">Location Label</label>
+              {/* Other GPS Errors */}
+              {gpsError && !permissionDenied && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-xl flex items-center justify-between gap-2 text-red-600 text-xs">
+                  <span>{gpsError}</span>
+                  <button
+                    type="button"
+                    onClick={handleRequestGps}
+                    className="font-bold underline shrink-0 hover:text-red-700"
+                  >
+                    Retry
+                  </button>
+                </div>
+              )}
+
+              {/* Location Label Input */}
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">
+                  Location Label <span className="text-red-500">*</span>
+                </label>
                 <input
                   type="text"
+                  required
                   value={locationLabel}
                   onChange={(e) => setLocationLabel(e.target.value)}
                   placeholder="e.g. Home, Main Kitchen, Community Center"
@@ -456,15 +677,84 @@ export default function OnboardingPage() {
                 />
               </div>
 
+              {/* Address Input */}
               <div>
-                <label className="block text-xs font-bold text-gray-600 mb-1">Manual Address / Landmark</label>
+                <label className="block text-xs font-bold text-gray-700 mb-1">
+                  Address / Landmark <span className="text-red-500">*</span>
+                </label>
                 <input
                   type="text"
+                  required
                   value={address}
                   onChange={(e) => setAddress(e.target.value)}
-                  placeholder="e.g. Bandra West, Mumbai or Flat 402, Sunshine Apts"
+                  placeholder="e.g. Flat 402, Sunshine Apts, Bandra West, Mumbai"
                   className="w-full px-4 py-2.5 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-brand-gold focus:outline-none"
                 />
+              </div>
+
+              {/* Manual Entry Fallback & Coordinate Inputs */}
+              <div className="pt-2 border-t border-gray-200">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-xs font-bold text-gray-700 flex items-center gap-1.5">
+                    <MapPin size={14} className="text-brand-charcoal" />
+                    <span>Coordinates (Latitude & Longitude) <span className="text-red-500">*</span></span>
+                  </label>
+                  {!manualEntryMode && (
+                    <button
+                      type="button"
+                      onClick={() => setManualEntryMode(true)}
+                      className="text-[11px] text-brand-charcoal font-semibold hover:underline"
+                    >
+                      Enter manually
+                    </button>
+                  )}
+                </div>
+
+                {(manualEntryMode || permissionDenied || latitude !== null) && (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <span className="block text-[11px] text-gray-500 mb-1">Latitude (-90 to 90)</span>
+                        <input
+                          type="number"
+                          step="0.0001"
+                          value={latitude ?? ""}
+                          onChange={(e) => setLatitude(e.target.value === "" ? null : parseFloat(e.target.value))}
+                          placeholder="e.g. 19.0760"
+                          className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs focus:ring-2 focus:ring-brand-gold focus:outline-none font-mono"
+                        />
+                      </div>
+                      <div>
+                        <span className="block text-[11px] text-gray-500 mb-1">Longitude (-180 to 180)</span>
+                        <input
+                          type="number"
+                          step="0.0001"
+                          value={longitude ?? ""}
+                          onChange={(e) => setLongitude(e.target.value === "" ? null : parseFloat(e.target.value))}
+                          placeholder="e.g. 72.8777"
+                          className="w-full px-3 py-2 bg-white border border-gray-200 rounded-xl text-xs focus:ring-2 focus:ring-brand-gold focus:outline-none font-mono"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Quick City Presets */}
+                    <div>
+                      <span className="block text-[11px] text-gray-500 mb-1.5">Quick Location Presets:</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {CITY_PRESETS.map((city) => (
+                          <button
+                            key={city.name}
+                            type="button"
+                            onClick={() => handleSelectCityPreset(city)}
+                            className="px-2.5 py-1 text-xs bg-white border border-gray-200 rounded-lg hover:border-brand-gold hover:bg-yellow-50/50 transition-colors text-gray-700 font-medium"
+                          >
+                            {city.name}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -520,10 +810,13 @@ export default function OnboardingPage() {
               <button
                 type="submit"
                 disabled={submitting}
-                className="flex-1 py-3.5 bg-brand-charcoal text-white rounded-xl font-bold hover:bg-gray-800 transition-colors flex items-center justify-center gap-2"
+                className="flex-1 py-3.5 bg-brand-charcoal text-white rounded-xl font-bold hover:bg-gray-800 transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
               >
                 {submitting ? (
-                  <span>Saving Profile...</span>
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                    <span>Saving Profile...</span>
+                  </>
                 ) : selectedRole === "volunteer" ? (
                   <>
                     <span>Complete Onboarding</span>
@@ -599,11 +892,20 @@ export default function OnboardingPage() {
                 <button
                   type="button"
                   onClick={handleSendOtp}
-                  disabled={submitting}
-                  className="w-full py-3.5 bg-brand-charcoal text-white rounded-xl font-bold hover:bg-gray-800 transition-colors flex items-center justify-center gap-2"
+                  disabled={otpSending}
+                  className="w-full py-3.5 bg-brand-charcoal text-white rounded-xl font-bold hover:bg-gray-800 transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
                 >
-                  <Phone size={18} />
-                  <span>{submitting ? "Sending SMS Code..." : "Send Verification Code"}</span>
+                  {otpSending ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      <span>Sending SMS Code...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Phone size={18} />
+                      <span>Send Verification Code</span>
+                    </>
+                  )}
                 </button>
               </div>
             ) : (
@@ -620,17 +922,26 @@ export default function OnboardingPage() {
                     value={otpCode}
                     onChange={(e) => setOtpCode(e.target.value)}
                     placeholder="123456"
-                    className="w-full px-4 py-3 text-center tracking-widest text-2xl font-black border border-gray-200 rounded-xl focus:ring-2 focus:ring-brand-gold focus:outline-none"
+                    className="w-full px-4 py-3 text-center tracking-widest text-2xl font-black border border-gray-200 rounded-xl focus:ring-2 focus:ring-brand-gold focus:outline-none font-mono"
                   />
                 </div>
 
                 <button
                   type="submit"
                   disabled={submitting || otpSuccess}
-                  className="w-full py-3.5 bg-brand-charcoal text-white rounded-xl font-bold hover:bg-gray-800 transition-colors flex items-center justify-center gap-2"
+                  className="w-full py-3.5 bg-brand-charcoal text-white rounded-xl font-bold hover:bg-gray-800 transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
                 >
-                  <span>{submitting ? "Verifying..." : "Confirm & Access Dashboard"}</span>
-                  <ArrowRight size={18} />
+                  {submitting ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                      <span>Verifying...</span>
+                    </>
+                  ) : (
+                    <>
+                      <span>Confirm & Access Dashboard</span>
+                      <ArrowRight size={18} />
+                    </>
+                  )}
                 </button>
 
                 <div className="flex items-center justify-between text-xs text-gray-500 pt-2">
@@ -641,7 +952,7 @@ export default function OnboardingPage() {
                     <button
                       type="button"
                       onClick={handleSendOtp}
-                      disabled={submitting}
+                      disabled={otpSending}
                       className="font-bold text-brand-gold hover:underline flex items-center gap-1"
                     >
                       <RefreshCw size={12} />
