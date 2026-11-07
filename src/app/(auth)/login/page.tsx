@@ -1,155 +1,138 @@
-"use client";
-
-import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase";
-import { ShieldCheck, Mail, Lock, ArrowRight, HeartHandshake } from "lucide-react";
+import { HeartHandshake, Utensils, Truck, ShieldCheck, ArrowRight, KeyRound } from "lucide-react";
 import Link from "next/link";
 
+export const metadata = {
+  title: "Sign In | Annapurna Food Rescue",
+  description: "Select your role to sign in to the Annapurna zero-hunger food redistribution network.",
+};
+
 export default function LoginPage() {
-  const router = useRouter();
-  const supabase = createClient();
-
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState("");
-
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSubmitting(true);
-    setError("");
-
-    try {
-      const { error: authError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (authError) {
-        setError(authError.message);
-      } else {
-        // Query /api/me to determine destination
-        try {
-          const res = await fetch("/api/me");
-          if (res.ok) {
-            const json = await res.json();
-            if (json?.data?.dashboardRoute) {
-              router.push(json.data.dashboardRoute);
-              return;
-            }
-          }
-        } catch {}
-        router.push("/onboarding");
-      }
-    } catch (err: any) {
-      setError(err.message || "An unexpected error occurred.");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
   return (
     <div className="min-h-[calc(100vh-4rem)] flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8 bg-brand-slate">
-      <div className="max-w-4xl w-full grid grid-cols-1 md:grid-cols-2 bg-brand-white rounded-3xl shadow-xl overflow-hidden border border-gray-100">
-        {/* Left Side: Branding / Info */}
-        <div className="bg-brand-charcoal text-brand-white p-12 flex flex-col justify-between hidden md:flex">
-          <div>
-            <HeartHandshake size={48} className="text-brand-gold mb-6" />
-            <h2 className="text-3xl font-extrabold mb-4">Welcome Back.</h2>
-            <p className="text-gray-400 text-lg">
-              Every meal shared brings us closer to a world with zero hunger and zero food waste.
-            </p>
+      <div className="max-w-4xl w-full space-y-8">
+        {/* Header */}
+        <div className="text-center space-y-3">
+          <div className="inline-flex items-center justify-center p-3 rounded-2xl bg-amber-50 text-brand-gold border border-amber-100 shadow-sm mb-2">
+            <HeartHandshake size={32} aria-hidden="true" />
+          </div>
+          <h1 className="text-3xl sm:text-4xl font-black text-brand-charcoal tracking-tight">
+            Welcome to Annapurna
+          </h1>
+          <p className="text-base sm:text-lg text-gray-600 max-w-xl mx-auto">
+            Choose how you would like to participate in our community food redistribution network.
+          </p>
+        </div>
+
+        {/* Distinct Role Choice Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 sm:gap-8 pt-4">
+          {/* Card 1: Donor */}
+          <div className="relative group bg-white rounded-3xl p-8 sm:p-10 border-2 border-transparent hover:border-amber-300 shadow-lg hover:shadow-xl transition-all flex flex-col justify-between">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-amber-800 bg-amber-100 px-3 py-1 rounded-full">
+                  Food Donor
+                </span>
+                <div className="w-12 h-12 rounded-2xl bg-amber-50 text-brand-gold flex items-center justify-center border border-amber-100">
+                  <Utensils size={24} aria-hidden="true" />
+                </div>
+              </div>
+
+              <h2 className="text-2xl font-black text-brand-charcoal">
+                I want to donate food
+              </h2>
+
+              <p className="text-sm text-gray-600 leading-relaxed">
+                Connect your restaurant, catered event, cafeteria, or household surplus with verified local community distributions. Fast pickup coordination with real-time tracking.
+              </p>
+
+              <ul className="text-xs text-gray-500 space-y-2 pt-2 border-t border-gray-100">
+                <li className="flex items-center gap-2">
+                  <ShieldCheck size={16} className="text-brand-eco flex-shrink-0" />
+                  <span>Verified, thermal-insulated volunteer pickup</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <ShieldCheck size={16} className="text-brand-eco flex-shrink-0" />
+                  <span>Instant sign-in with your mobile number</span>
+                </li>
+              </ul>
+            </div>
+
+            <div className="pt-8">
+              <Link
+                href="/login/donor"
+                className="w-full py-4 px-6 rounded-2xl bg-brand-charcoal text-white font-bold text-sm flex items-center justify-center gap-2 shadow-md hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-brand-gold focus:ring-offset-2 transition-all group-hover:bg-amber-600"
+              >
+                <span>Continue as Food Donor</span>
+                <ArrowRight size={18} aria-hidden="true" />
+              </Link>
+            </div>
           </div>
 
-          <div className="space-y-4 text-sm text-gray-400">
-            <div className="flex items-center gap-3">
-              <ShieldCheck className="text-brand-eco" size={20} />
-              <span>Verified Community Food Redistribution</span>
+          {/* Card 2: Requester */}
+          <div className="relative group bg-white rounded-3xl p-8 sm:p-10 border-2 border-transparent hover:border-emerald-300 shadow-lg hover:shadow-xl transition-all flex flex-col justify-between">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold uppercase tracking-wider text-emerald-800 bg-emerald-100 px-3 py-1 rounded-full">
+                  Food Requester
+                </span>
+                <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-brand-eco flex items-center justify-center border border-emerald-100">
+                  <HeartHandshake size={24} aria-hidden="true" />
+                </div>
+              </div>
+
+              <h2 className="text-2xl font-black text-brand-charcoal">
+                I need food
+              </h2>
+
+              <p className="text-sm text-gray-600 leading-relaxed">
+                Find wholesome, quality-inspected meals for yourself, family, shelter, or community center. Dignified, private requests with no bureaucracy or public queues.
+              </p>
+
+              <ul className="text-xs text-gray-500 space-y-2 pt-2 border-t border-gray-100">
+                <li className="flex items-center gap-2">
+                  <ShieldCheck size={16} className="text-brand-eco flex-shrink-0" />
+                  <span>Respectful, private community food assistance</span>
+                </li>
+                <li className="flex items-center gap-2">
+                  <ShieldCheck size={16} className="text-brand-eco flex-shrink-0" />
+                  <span>Direct delivery by trained local volunteers</span>
+                </li>
+              </ul>
             </div>
-            <div className="flex items-center gap-3">
-              <ShieldCheck className="text-brand-eco" size={20} />
-              <span>Real-time logistics and dispatch</span>
+
+            <div className="pt-8">
+              <Link
+                href="/login/requester"
+                className="w-full py-4 px-6 rounded-2xl bg-emerald-700 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-md hover:bg-emerald-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 transition-all"
+              >
+                <span>Continue to Request Food</span>
+                <ArrowRight size={18} aria-hidden="true" />
+              </Link>
             </div>
           </div>
         </div>
 
-        {/* Right Side: Login Form */}
-        <div className="p-8 md:p-12 flex flex-col justify-center">
-          <div className="text-center md:text-left mb-8">
-            <h3 className="text-2xl font-bold text-brand-charcoal mb-2">Sign In to Annapurna</h3>
-            <p className="text-gray-500 text-sm">Enter your account credentials to continue.</p>
+        {/* Secondary Access: Volunteer & Staff/Admin */}
+        <div className="pt-6 border-t border-gray-200 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-gray-500">
+          <div className="flex items-center gap-2">
+            <Truck size={16} className="text-brand-gold" />
+            <span>Are you a delivery volunteer?</span>
+            <Link
+              href="/login/volunteer"
+              className="font-bold text-brand-charcoal hover:underline ml-1"
+            >
+              Sign in as Volunteer
+            </Link>
           </div>
 
-          <form onSubmit={handleLogin} className="space-y-6">
-            {error && (
-              <div className="bg-red-50 text-red-600 text-sm p-4 rounded-xl border border-red-200">
-                {error}
-              </div>
-            )}
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email Address</label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
-                  <Mail size={18} />
-                </div>
-                <input
-                  required
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-brand-gold focus:border-brand-gold outline-none transition-shadow"
-                  placeholder="name@example.com"
-                />
-              </div>
-            </div>
-
-            <div>
-              <div className="flex justify-between items-center mb-1">
-                <label className="block text-sm font-medium text-gray-700">Password</label>
-                <Link href="/contact" className="text-xs text-brand-gold hover:text-yellow-600 font-semibold">
-                  Need account help?
-                </Link>
-              </div>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400">
-                  <Lock size={18} />
-                </div>
-                <input
-                  required
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-brand-gold focus:border-brand-gold outline-none transition-shadow"
-                  placeholder="••••••••"
-                />
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={isSubmitting}
-              className={`w-full py-3 rounded-xl font-bold text-white transition-all shadow-md flex justify-center items-center gap-2 ${
-                isSubmitting
-                  ? "bg-gray-400 cursor-not-allowed"
-                  : "bg-brand-charcoal hover:bg-gray-800 hover:-translate-y-0.5"
-              }`}
+          <div className="flex items-center gap-2">
+            <KeyRound size={14} className="text-gray-400" />
+            <span>Staff or Administrator?</span>
+            <Link
+              href="/login/admin"
+              className="font-bold text-gray-600 hover:text-brand-charcoal hover:underline"
             >
-              {isSubmitting ? (
-                <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-              ) : (
-                <>
-                  Sign In <ArrowRight size={18} />
-                </>
-              )}
-            </button>
-          </form>
-
-          <div className="mt-8 text-center text-sm text-gray-500">
-            Don&apos;t have an account yet?{" "}
-            <Link href="/register" className="text-brand-gold font-bold hover:underline">
-              Create an Account
+              Admin Portal
             </Link>
           </div>
         </div>
