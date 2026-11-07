@@ -1,45 +1,67 @@
 # Project Status
 
-Updated: 2026-10-28 (Asia/Calcutta)
+Updated: 2026-11-07 (Asia/Calcutta)
 
 ## Overall
 
-Current stage: Stage 1
-Stage status: `BLOCKED` pending worker handoffs and human service configuration
-Recorded Git base: `d2e1dd17d54245b9ade0bd7a5b46b9e568acdd8e` (`main`, `origin/main`)
-Shared checkout: dirty; not an implementation worktree
+Current milestone: Stage 3 correction implementation and Stage 4 implementation
 
-## Separate status fields
+Code status: `COMPLETE AND PUSHED`
 
-| Area | Status | Evidence |
-|---|---|---|
-| Implementation | Not started under this six-stage workflow | Existing application and two uncommitted Antigravity-edited files predate the workflow |
-| Codex verification | Stage 1 baseline complete; worker code not received | `docs/audits/STAGE_1_BASELINE.md` |
-| User manual verification | Not started | No Stage 1 manual checklist completed |
-| Deployment | Not started | No Preview URL or environment recorded |
+Evidence status: `PARTIAL` pending clean real-database execution and a live browser journey
 
-## Baseline checks
+Completion branch: `codex/phase34-completion`
+
+Completion head: `cb275406c0f478e48716fe52405c5e6e121cce07`
+
+Remote branch: `origin/codex/phase34-completion` (verified at the same head)
+
+Implementation worktree: clean
+
+## Completion commits
+
+1. `3098124` — `fix(db): complete transactional food delivery workflow`
+2. `477ed28` — `feat(api): add QC tracking and completion commands`
+3. `cb27540` — `feat(ui): connect mapped delivery journey`
+
+## Verification
 
 | Check | Result |
 |---|---|
-| `git diff --check` | Pass with line-ending warnings on the two pre-existing modified files |
-| `npx tsc --noEmit` | Pass, exit 0 |
-| `npm run lint` | Pass, exit 0; 29 warnings |
-| `npm run build` | Pass, exit 0 with network available; initial sandbox run failed only fetching Google Fonts |
-| `npm test` | Fail/absent; no `test` script |
+| TypeScript | Pass: `npx tsc --noEmit` |
+| ESLint | Pass: 0 errors; 28 pre-existing warnings |
+| Automated tests | Pass: 163 tests across 48 suites |
+| Production build | Pass: Next.js 16.2.4 Turbopack build; 40 static pages and all added routes generated |
+| Diff hygiene | Pass: `git diff --check` |
+| Remote branch | Pass: local and `origin/codex/phase34-completion` both at `cb27540` |
+| Hosted migration dry run | Seven pending migrations identified; succeeds only with `--include-all` because the hosted ledger is behind |
+| Real pgTAP database execution | Not run: no disposable/local PostgreSQL environment is available |
+| Simultaneous two-session race proof | Not run: requires a disposable PostgreSQL environment |
+| Live browser journey | Not run against an approved migrated environment |
 
-## Human action required: yes
+## Completed scope
 
-1. Complete Antigravity's Supabase OAuth flow for the configured project-scoped MCP, then let the backend worker identify the accessible project name/reference. Do not authorize changes if that project is unrelated to Annapurna.
-2. Configure the Swift project key as the server-only `SWIFT_PROJECT_KEY` and its service URL as `SWIFT_BASE_URL`; never commit or paste the key into reports. The integration contract is now supplied by `swift-integration.md`.
-3. Relay the two Stage 1 prompts if direct Antigravity control remains unavailable, approve each generated Teamwork prompt artifact, and return their commit/handoff evidence.
+- Corrected the Stage 3 workflow defects: transactional listing create/update, exact idempotency replay, public-safe drop-off summaries, valid database fixtures, and completed lifecycle SQL.
+- Added Stage 4 QC, pickup, routing, location tracking, handover, receipt confirmation, cancellation, and requester/volunteer journey APIs.
+- Added the mapped delivery UI with bounded foreground GPS, Realtime refresh, route caching, failure states, QC, transitions, and receipt confirmation.
+- Removed the build-time Google Fonts network dependency so the production build is reproducible offline.
+- Added and updated workflow and lifecycle tests, contracts, and generated database types.
 
-## API/service/environment changes
+## Remaining external gates
 
-Codex made none. Antigravity configuration already points Supabase MCP at project reference `xtbabyqkgirjiratjcap`; authentication and project identity are unverified. No project mutation is authorized.
+These are validation/deployment gates, not unfinished application code and not an Antigravity dependency:
 
-## Manual verification needed
+1. Replay all migrations on a disposable Supabase/PostgreSQL environment and run `supabase test db`.
+2. Run true simultaneous database-session tests for competing listing claims, edits, and delivery acceptance.
+3. After explicit user approval, reconcile and apply the seven pending migrations to the hosted Supabase project.
+4. Run and record the donor -> requester -> volunteer -> requester browser journey against the migrated environment.
 
-- Confirm whether `xtbabyqkgirjiratjcap` is the intended dedicated Annapurna project.
-- Confirm Swift gateway health and complete a controlled send/verify/wrong-code/replay test after implementation.
-- Confirm the worker worktrees are separate and based on the recorded Stage 1 base chosen after planning documents are committed.
+## Human action required
+
+- Do not apply pending migrations to the hosted project without explicit user approval; the hosted migration ledger is behind and the operation mutates persistent data.
+- No live SMS may be sent until the user explicitly authorizes the destination number and test.
+- Keep server-only keys in local or deployment secret storage. Never paste values into chat, commits, prompts, or reports.
+
+## Next safe action
+
+Open/review the completion branch and prepare Stage 5 integration/release work. Database deployment remains a separate approval-gated step until a disposable replay is available or the user explicitly accepts applying the pending migration chain to the hosted project.
