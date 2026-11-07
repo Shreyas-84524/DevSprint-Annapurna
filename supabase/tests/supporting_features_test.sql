@@ -81,7 +81,7 @@ VALUES
 
 SET LOCAL ROLE anon;
 SELECT results_eq(
-  $$ SELECT title FROM public.events ORDER BY title $$,
+  $$ SELECT title FROM public.events WHERE id IN ('51000000-0000-4000-8000-000000000001'::uuid, '51000000-0000-4000-8000-000000000002'::uuid) ORDER BY title $$,
   $$ VALUES ('Published event'::text) $$,
   'anon sees only published events'
 );

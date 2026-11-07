@@ -607,6 +607,8 @@ export interface EventDTO {
   location: string;
   imageUrl?: string | null;
   createdAt: string;
+  isRolling?: boolean;
+  rollingOffsetDays?: number | null;
 }
 
 export interface CreateEventRequest {
@@ -615,6 +617,8 @@ export interface CreateEventRequest {
   date: string;
   location: string;
   imageUrl?: string | null;
+  isRolling?: boolean;
+  rollingOffsetDays?: number | null;
 }
 
 export interface UpdateEventRequest {
@@ -623,6 +627,8 @@ export interface UpdateEventRequest {
   date?: string;
   location?: string;
   imageUrl?: string | null;
+  isRolling?: boolean;
+  rollingOffsetDays?: number | null;
 }
 
 export interface FaqDTO {

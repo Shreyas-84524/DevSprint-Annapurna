@@ -332,7 +332,7 @@ export async function getEvents(customClient?: any): Promise<EventDTO[]> {
 
   const { data, error } = await supabase
     .from('events')
-    .select('id, title, description, date, location, image_url, created_at')
+    .select('id, title, description, date, location, image_url, created_at, is_rolling, rolling_offset_days')
     .eq('is_published', true)
     .order('date', { ascending: true });
 
@@ -348,6 +348,8 @@ export async function getEvents(customClient?: any): Promise<EventDTO[]> {
     location: e.location,
     imageUrl: e.image_url,
     createdAt: e.created_at,
+    isRolling: e.is_rolling,
+    rollingOffsetDays: e.rolling_offset_days,
   }));
 }
 
@@ -378,6 +380,8 @@ export async function createEvent(
     location: input.location.trim(),
     date: new Date(input.date).toISOString(),
     image_url: input.imageUrl || null,
+    is_rolling: (input as any).isRolling ?? false,
+    rolling_offset_days: (input as any).rollingOffsetDays ?? null,
     is_published: true,
   };
 
