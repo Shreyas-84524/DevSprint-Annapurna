@@ -64,7 +64,3 @@ Navigate to [http://localhost:3000](http://localhost:3000) to view the applicati
 ## 📖 Documentation
 * [MVP](docs/product/MVP.md) and [PRD](docs/product/PRD.md) — authoritative product scope.
 * [Architecture](docs/architecture/ARCHITECTURE.md), [data model](docs/architecture/DATA_MODEL.md), [API contracts](docs/architecture/API_CONTRACTS.md), and [ownership](docs/architecture/FILE_STRUCTURE.md).
-* [Six stages](docs/orchestration/STAGES.md), [working agreement](docs/orchestration/WORKING_AGREEMENT.md), and [current status](docs/orchestration/STATUS.md).
-* [Vercel plan](docs/deployment/VERCEL.md) and [Stage 1 audit](docs/audits/STAGE_1_BASELINE.md).
-
-`audit-reports/` is preserved historical evidence and may cite superseded legacy documents. It is not the active product plan.

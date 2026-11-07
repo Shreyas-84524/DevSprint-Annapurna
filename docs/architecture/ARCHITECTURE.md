@@ -46,10 +46,26 @@ The browser captures map pins and foreground GPS permission. A backend routing a
 
 Vercel functions remain stateless and do not host a custom persistent WebSocket server. Supabase Realtime supplies authorized updates. Migrations run deliberately outside the application build. Preview is audited before production. Secrets are server-only; only publishable Supabase values are browser-exposed.
 
-## Decisions pending evidence
+## Production Deployment & Runtime Specification
 
-- Pending verification session storage/TTL implementation and live Swift gateway validation.
-- Dedicated Supabase project identity and region.
-- Retention period for detailed tracking points.
-- Exact nearby radius and route-cache TTL.
-- Current free-tier quotas for Supabase, Vercel, basemap, and routing providers at Stage 6.
+### Hosting & Infrastructure
+- **Application Platform**: Vercel Serverless (Next.js 16 App Router). Functions are stateless; no custom in-memory daemons or long-lived persistent WebSocket servers.
+- **Database & Identity**: Hosted Supabase (PostgreSQL, Supabase Auth, Storage, Realtime, RLS).
+- **Scheduled Background Tasks**: Vercel Cron triggers `GET /api/cron/refresh-events` daily, authorized via `CRON_SECRET` bearer token, executing `public.refresh_rolling_events()` to advance demo event dates.
+
+### Storage Buckets
+1. `cms-assets`: Public read, authenticated admin write (<= 4.5 MB images).
+2. `listing-images`: Public read, authenticated donor write (<= 5 MB images).
+
+### Environment Variables Matrix
+- `NEXT_PUBLIC_SUPABASE_URL`: Public Supabase API gateway URL (`https://<project-ref>.supabase.co`).
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`: Public anonymous API key for client-side queries and RLS-scoped access.
+- `SUPABASE_SERVICE_ROLE_KEY`: Server-only secret for administrative operations, challenge management, and cron jobs. Never exposed to browser.
+- `NEXT_PUBLIC_APP_URL`: Canonical site origin (e.g., `https://annapurna-steel.vercel.app`).
+- `ADMIN_BOOTSTRAP_SECRET`: Server-only secret for initial administrative provisioning (`/api/admin/bootstrap`).
+- `SWIFT_BASE_URL`: Server-only Swift OTP service base URL.
+- `SWIFT_PROJECT_KEY`: Server-only Swift authentication key. Never bundled into client components.
+- `GEOAPIFY_API_KEY`: Server-only key for route geometry calculations (`/api/routing`).
+- `NEXT_PUBLIC_GEOAPIFY_MAP_KEY`: Public map tile key (falls back to OpenStreetMap standard tiles).
+- `CRON_SECRET`: Server-only secret protecting Vercel Cron endpoints.
+- `GOOGLE_SHEETS_WEBHOOK_URL`: Optional server-only webhook for operational reporting sync (`/api/sync`).
