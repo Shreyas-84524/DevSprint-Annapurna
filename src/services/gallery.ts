@@ -1,26 +1,53 @@
-import { createClient } from "@/lib/supabase";
+import { GalleryItemDTO, CreateGalleryItemRequest } from "@/types/contracts";
 
-export const getGalleryService = (client = createClient()) => {
+export const getGalleryService = () => {
   return {
-    async getGalleryItems() {
-      return client
-        .from("gallery")
-        .select("*")
-        .order("created_at", { ascending: false });
+    async getGalleryItems(): Promise<{ data: GalleryItemDTO[] | null; error: Error | null }> {
+      try {
+        const res = await fetch("/api/cms/gallery", {
+          cache: "no-store",
+        });
+        if (!res.ok) {
+          throw new Error(`Failed to fetch gallery items: ${res.statusText}`);
+        }
+        const json = await res.json();
+        return { data: json.items || [], error: null };
+      } catch (err: any) {
+        return { data: null, error: err };
+      }
     },
 
-    async addGalleryItem(item: { title: string; image_url: string }) {
-      return client
-        .from("gallery")
-        .insert(item)
-        .select();
+    async addGalleryItem(payload: CreateGalleryItemRequest): Promise<{ data: GalleryItemDTO | null; error: Error | null }> {
+      try {
+        const res = await fetch("/api/cms/gallery", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!res.ok) {
+          const errBody = await res.json().catch(() => ({}));
+          throw new Error(errBody.error || `Failed to add gallery item: ${res.statusText}`);
+        }
+        const json = await res.json();
+        return { data: json.item || null, error: null };
+      } catch (err: any) {
+        return { data: null, error: err };
+      }
     },
 
-    async deleteGalleryItem(id: string) {
-      return client
-        .from("gallery")
-        .delete()
-        .eq("id", id);
-    }
+    async deleteGalleryItem(id: string): Promise<{ error: Error | null }> {
+      try {
+        const res = await fetch(`/api/cms/gallery/${id}`, {
+          method: "DELETE",
+        });
+        if (!res.ok) {
+          const errBody = await res.json().catch(() => ({}));
+          throw new Error(errBody.error || `Failed to delete gallery item: ${res.statusText}`);
+        }
+        return { error: null };
+      } catch (err: any) {
+        return { error: err };
+      }
+    },
   };
 };

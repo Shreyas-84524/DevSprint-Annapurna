@@ -1,4 +1,4 @@
-import { Heart, Scale, Globe } from "lucide-react";
+import { Heart, Globe } from "lucide-react";
 
 export default function AboutPage() {
   return (
@@ -11,14 +11,14 @@ export default function AboutPage() {
         </p>
 
         <div className="bg-brand-white border border-gray-100 shadow-sm rounded-2xl p-8 mb-12">
-          <h2 className="text-2xl font-bold text-brand-charcoal mb-4 flex items-center gap-2"><Globe className="text-brand-gold" /> The Zero Hunger Ecosystem</h2>
+          <h2 className="text-2xl font-bold text-brand-charcoal mb-4 flex items-center gap-2"><Globe className="text-brand-gold" aria-hidden="true" /> The Zero Hunger Ecosystem</h2>
           <p className="mb-4">
             We are a localized, tech-enabled ecosystem designed to bridge the gap between food surplus and food scarcity. By connecting willing donors, discreet beneficiaries, and a dedicated fleet of community delivery volunteers, we ensure that excess food is redistributed efficiently, safely, and with the utmost dignity.
           </p>
         </div>
 
         <div className="bg-green-50 border border-green-100 rounded-2xl p-8 mb-12">
-          <h2 className="text-2xl font-bold text-brand-eco mb-4 flex items-center gap-2"><Heart className="text-brand-eco" /> Our "True Zero Waste" Commitment</h2>
+          <h2 className="text-2xl font-bold text-brand-eco mb-4 flex items-center gap-2"><Heart className="text-brand-eco" aria-hidden="true" /> Our "True Zero Waste" Commitment</h2>
           <p className="mb-4">
             We believe every ounce of nourishment has value. Our platform features an automated rerouting protocol: if donated food is nearing its expiry window and has not been requested by a human beneficiary, our system immediately alerts volunteers to redistribute the food to local animal shelters and street dogs. We guarantee absolute zero food waste.
           </p>

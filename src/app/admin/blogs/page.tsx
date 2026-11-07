@@ -1,80 +1,89 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { createClient } from "@/lib/supabase";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { getBlogsService } from "@/services/blogs";
-import { Trash2, Edit2, Plus, ArrowLeft, BookOpen, Check } from "lucide-react";
+import { BlogPostDTO } from "@/types/contracts";
+import { Trash2, Plus, ArrowLeft, BookOpen, AlertCircle, RefreshCw } from "lucide-react";
 import Link from "next/link";
 
 export default function AdminBlogsPage() {
-  const supabase = createClient();
-  const blogsService = getBlogsService(supabase);
+  const blogsService = useMemo(() => getBlogsService(), []);
 
-  const [blogs, setBlogs] = useState<any[]>([]);
+  const [blogs, setBlogs] = useState<BlogPostDTO[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   
   const [title, setTitle] = useState("");
   const [slug, setSlug] = useState("");
   const [content, setContent] = useState("");
   const [categoryId, setCategoryId] = useState("");
   const [imageUrl, setImageUrl] = useState("");
+  const [status, setStatus] = useState<"published" | "draft">("published");
   
   const [showForm, setShowForm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
-  const loadBlogsAndCats = async () => {
+  const loadBlogsAndCats = useCallback(async () => {
+    setLoading(true);
+    setError(null);
     try {
-      const { data: blogList } = await blogsService.getBlogs("all");
-      if (blogList) setBlogs(blogList);
+      const { data: blogList, error: blogErr } = await blogsService.getBlogs("all");
+      if (blogErr) {
+        setError(blogErr.message || "Failed to load stories.");
+      } else {
+        setBlogs(blogList || []);
+      }
       
       const { data: catList } = await blogsService.getCategories();
       if (catList && catList.length > 0) {
         setCategories(catList);
-      } else {
-        // Seed default category if empty
-        const defaultCat = { name: "Community Outreach", slug: "community-outreach" };
-        const { data: seeded } = await blogsService.createCategory(defaultCat);
-        if (seeded) setCategories(seeded);
       }
-    } catch (err) {
-      console.error(err);
+    } catch {
+      setError("Network error loading stories.");
     } finally {
       setLoading(false);
     }
-  };
+  }, [blogsService]);
 
   useEffect(() => {
     loadBlogsAndCats();
-  }, []);
+  }, [loadBlogsAndCats]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError(null);
+
+    if (!title.trim() || !content.trim()) {
+      setFormError("Title and content are required.");
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
-      const { data: { user } } = await supabase.auth.getUser();
       const payload = {
-        title,
-        slug: slug || title.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
-        content,
-        image_url: imageUrl || "https://images.unsplash.com/photo-1593113598332-cd288d649433?w=800",
-        author_id: user?.id || null,
-        category_id: categoryId || categories[0]?.id || null,
-        status: "published"
+        title: title.trim(),
+        slug: slug.trim() || title.toLowerCase().replace(/[^a-z0-9]+/g, "-"),
+        content: content.trim(),
+        imageUrl: imageUrl.trim() || undefined,
+        categoryId: categoryId || undefined,
+        status,
       };
 
-      const { error } = await blogsService.createBlog(payload);
-      if (error) throw error;
+      const { error: createErr } = await blogsService.createBlog(payload);
+      if (createErr) throw createErr;
       
       setTitle("");
       setSlug("");
       setContent("");
       setImageUrl("");
+      setStatus("published");
       setShowForm(false);
       await loadBlogsAndCats();
-    } catch (err) {
-      console.error("Error creating blog:", err);
+    } catch (err: any) {
+      setFormError(err.message || "Error creating story.");
     } finally {
       setIsSubmitting(false);
     }
@@ -83,149 +92,238 @@ export default function AdminBlogsPage() {
   const handleDelete = async (id: string) => {
     if (!confirm("Are you sure you want to delete this article?")) return;
     try {
-      const { error } = await blogsService.deleteBlog(id);
-      if (error) throw error;
+      const { error: delErr } = await blogsService.deleteBlog(id);
+      if (delErr) alert(delErr.message || "Failed to delete article");
       await loadBlogsAndCats();
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      alert(err.message || "Error deleting story");
     }
   };
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-      <Link href="/admin" className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-brand-charcoal font-bold mb-8">
-        <ArrowLeft size={16} /> Back to Command Center
+      <Link
+        href="/admin"
+        className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-brand-charcoal font-bold mb-8 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold"
+      >
+        <ArrowLeft size={16} aria-hidden="true" />
+        <span>Back to Command Center</span>
       </Link>
 
-      <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-black text-brand-charcoal">Article Publishing</h1>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+        <div>
+          <h1 className="text-3xl font-black text-brand-charcoal">Manage Stories & Articles</h1>
+          <p className="text-gray-500 text-sm mt-1">Publish verified impact stories and field updates.</p>
+        </div>
+
         <button
+          type="button"
           onClick={() => setShowForm(!showForm)}
-          className="px-4 py-2 bg-brand-charcoal text-white rounded-xl font-bold hover:bg-gray-800 transition-colors flex items-center gap-2"
+          className="inline-flex items-center gap-2 px-5 py-2.5 bg-brand-charcoal text-white rounded-xl font-bold hover:bg-gray-800 transition-colors shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold"
         >
-          <Plus size={18} /> {showForm ? "Cancel" : "Create Article"}
+          <Plus size={18} aria-hidden="true" />
+          <span>{showForm ? "Cancel" : "New Story"}</span>
         </button>
       </div>
 
       {showForm && (
-        <form onSubmit={handleCreate} className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm max-w-3xl mb-12 space-y-6">
-          <h2 className="text-xl font-bold text-brand-charcoal">New Article Details</h2>
-          
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Title</label>
-            <input
-              required
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-brand-gold"
-              placeholder="e.g., Food Drive feeds 100 families"
-            />
-          </div>
+        <form onSubmit={handleCreate} className="bg-white p-6 sm:p-8 rounded-3xl border border-gray-100 shadow-md mb-12 space-y-6">
+          <h2 className="text-xl font-bold text-brand-charcoal border-b pb-3">Author New Story</h2>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+          {formError && (
+            <div role="alert" className="p-4 bg-red-50 text-red-700 rounded-xl text-sm border border-red-200">
+              {formError}
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Slug (URL Path)</label>
+              <label htmlFor="blog-title" className="block text-sm font-bold text-gray-700 mb-2">
+                Article Title <span className="text-red-500">*</span>
+              </label>
               <input
+                id="blog-title"
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                required
+                placeholder="Over 5,000 Meals Rescued in Mumbai Drive"
+                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold text-brand-charcoal"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="blog-slug" className="block text-sm font-bold text-gray-700 mb-2">
+                URL Slug <span className="text-gray-400 font-normal">(Auto-generated if empty)</span>
+              </label>
+              <input
+                id="blog-slug"
                 type="text"
                 value={slug}
                 onChange={(e) => setSlug(e.target.value)}
-                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-brand-gold"
-                placeholder="e.g., food-drive-feeds-100"
+                placeholder="5000-meals-rescued-mumbai"
+                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold text-brand-charcoal"
               />
             </div>
+
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+              <label htmlFor="blog-category" className="block text-sm font-bold text-gray-700 mb-2">
+                Category
+              </label>
               <select
+                id="blog-category"
                 value={categoryId}
                 onChange={(e) => setCategoryId(e.target.value)}
-                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-brand-gold"
+                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold text-brand-charcoal bg-white"
               >
                 <option value="">Select Category</option>
-                {categories.map(cat => (
-                  <option key={cat.id} value={cat.id}>{cat.name}</option>
+                {categories.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
                 ))}
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="blog-status" className="block text-sm font-bold text-gray-700 mb-2">
+                Publication Status
+              </label>
+              <select
+                id="blog-status"
+                value={status}
+                onChange={(e) => setStatus(e.target.value as any)}
+                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold text-brand-charcoal bg-white"
+              >
+                <option value="published">Published (Public)</option>
+                <option value="draft">Draft (Admin Only)</option>
               </select>
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Cover Image URL</label>
+            <label htmlFor="blog-image" className="block text-sm font-bold text-gray-700 mb-2">
+              Featured Image URL <span className="text-gray-400 font-normal">(Optional)</span>
+            </label>
             <input
+              id="blog-image"
               type="url"
               value={imageUrl}
               onChange={(e) => setImageUrl(e.target.value)}
-              className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-brand-gold"
-              placeholder="https://images.unsplash.com/photo-..."
+              placeholder="https://..."
+              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold text-brand-charcoal"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Article Content (HTML supported)</label>
+            <label htmlFor="blog-content" className="block text-sm font-bold text-gray-700 mb-2">
+              Article Content <span className="text-red-500">*</span>
+            </label>
             <textarea
-              required
-              rows={8}
+              id="blog-content"
+              rows={6}
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-brand-gold"
-              placeholder="Write the full content..."
-            ></textarea>
+              required
+              placeholder="Write the full story details..."
+              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold text-brand-charcoal resize-y"
+            />
           </div>
 
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="px-6 py-3 bg-brand-charcoal text-white font-bold rounded-xl shadow-md hover:bg-gray-800 disabled:opacity-50 transition-all flex items-center gap-2"
-          >
-            {isSubmitting ? "Publishing..." : "Publish Now"}
-          </button>
+          <div className="flex justify-end gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => setShowForm(false)}
+              className="px-5 py-2.5 border border-gray-200 text-gray-600 rounded-xl font-bold hover:bg-gray-50 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="px-6 py-2.5 bg-brand-charcoal text-white rounded-xl font-bold hover:bg-gray-800 transition-colors disabled:opacity-50"
+            >
+              {isSubmitting ? "Saving..." : "Save Story"}
+            </button>
+          </div>
         </form>
       )}
 
       {loading ? (
-        <div className="text-center py-12">
-          <span className="w-8 h-8 border-4 border-brand-gold border-t-transparent rounded-full animate-spin"></span>
+        <div className="text-center py-16 flex flex-col items-center" aria-live="polite">
+          <span className="w-8 h-8 border-4 border-brand-gold border-t-transparent rounded-full animate-spin mb-4" />
+          <p className="text-gray-500">Loading stories...</p>
+        </div>
+      ) : error ? (
+        <div className="bg-white p-8 rounded-3xl border border-red-100 text-center max-w-md mx-auto">
+          <AlertCircle className="mx-auto text-red-500 mb-3" size={36} aria-hidden="true" />
+          <p className="text-gray-700 font-semibold mb-4">{error}</p>
+          <button
+            type="button"
+            onClick={loadBlogsAndCats}
+            className="inline-flex items-center gap-2 px-5 py-2 bg-brand-charcoal text-white rounded-xl font-bold hover:bg-gray-800"
+          >
+            <RefreshCw size={14} aria-hidden="true" />
+            <span>Retry</span>
+          </button>
         </div>
       ) : blogs.length === 0 ? (
-        <div className="text-center py-12 text-gray-500 bg-gray-50 rounded-2xl border border-gray-100">
-          <BookOpen className="mx-auto text-gray-300 mb-2" />
-          No articles published yet.
+        <div className="text-center py-16 bg-white rounded-3xl border border-gray-100 p-8">
+          <BookOpen className="mx-auto text-gray-300 mb-3" size={40} aria-hidden="true" />
+          <h2 className="text-lg font-bold text-brand-charcoal mb-1">No Stories Published</h2>
+          <p className="text-gray-500 text-sm mb-4">Click &ldquo;New Story&rdquo; above to publish your first article.</p>
         </div>
       ) : (
         <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
-          <table className="w-full border-collapse text-left">
-            <thead>
-              <tr className="bg-gray-50 text-gray-500 text-xs font-bold uppercase tracking-wider border-b border-gray-100">
-                <th className="p-4 sm:p-6">Title</th>
-                <th className="p-4 sm:p-6">Category</th>
-                <th className="p-4 sm:p-6">Status</th>
-                <th className="p-4 sm:p-6">Date</th>
-                <th className="p-4 sm:p-6 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100 text-sm">
-              {blogs.map(blog => (
-                <tr key={blog.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="p-4 sm:p-6 font-bold text-brand-charcoal">{blog.title}</td>
-                  <td className="p-4 sm:p-6 text-gray-500">{blog.blog_categories?.name || "General"}</td>
-                  <td className="p-4 sm:p-6">
-                    <span className="bg-green-100 text-green-800 text-xs font-bold px-2 py-0.5 rounded uppercase">
-                      {blog.status}
-                    </span>
-                  </td>
-                  <td className="p-4 sm:p-6 text-gray-400">{new Date(blog.created_at).toLocaleDateString()}</td>
-                  <td className="p-4 sm:p-6 text-right">
-                    <button
-                      onClick={() => handleDelete(blog.id)}
-                      className="text-red-500 hover:text-red-700 p-2 transition-colors inline-flex items-center gap-1 font-bold"
-                    >
-                      <Trash2 size={16} /> Delete
-                    </button>
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-100 text-xs font-bold text-gray-500 uppercase tracking-wider">
+                  <th className="py-4 px-6">Title</th>
+                  <th className="py-4 px-6">Status</th>
+                  <th className="py-4 px-6">Category</th>
+                  <th className="py-4 px-6">Date</th>
+                  <th className="py-4 px-6 text-right">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-gray-100 text-sm text-gray-700">
+                {blogs.map((blog) => (
+                  <tr key={blog.id} className="hover:bg-gray-50/50 transition-colors">
+                    <td className="py-4 px-6 font-semibold text-brand-charcoal max-w-xs truncate">
+                      {blog.title}
+                    </td>
+                    <td className="py-4 px-6">
+                      <span
+                        className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                          blog.status === "published"
+                            ? "bg-green-50 text-green-700"
+                            : "bg-yellow-50 text-yellow-700"
+                        }`}
+                      >
+                        {blog.status}
+                      </span>
+                    </td>
+                    <td className="py-4 px-6 text-gray-500">
+                      {blog.category?.name || "General"}
+                    </td>
+                    <td className="py-4 px-6 text-gray-400 text-xs">
+                      {new Date(blog.createdAt).toLocaleDateString()}
+                    </td>
+                    <td className="py-4 px-6 text-right">
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(blog.id)}
+                        aria-label={`Delete story ${blog.title}`}
+                        className="p-1.5 text-gray-400 hover:text-red-600 rounded transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-red-500"
+                      >
+                        <Trash2 size={16} aria-hidden="true" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>

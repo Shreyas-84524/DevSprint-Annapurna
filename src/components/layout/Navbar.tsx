@@ -2,11 +2,11 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { Heart } from "lucide-react";
+import { Utensils, Menu, X } from "lucide-react";
 import { usePathname } from "next/navigation";
-import { Menu, X } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import NotificationBell from "@/components/notifications/NotificationBell";
 
 export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
@@ -14,34 +14,57 @@ export default function Navbar() {
 
   const links = [
     { name: "Home", href: "/" },
-    { name: "Donor Dashboard", href: "/dashboard/donor" },
-    { name: "Requester Dashboard", href: "/dashboard/beneficiary" },
-    { name: "Volunteer Dashboard", href: "/dashboard/volunteer" },
-    { name: "Impact", href: "/impact" },
+    { name: "Give Food", href: "/dashboard/donor" },
+    { name: "Find Food", href: "/dashboard/beneficiary" },
+    { name: "Deliver", href: "/dashboard/volunteer" },
+    { name: "Stories", href: "/blog" },
+    { name: "Events", href: "/events" },
+    { name: "FAQ", href: "/faq" },
+    { name: "Contact", href: "/contact" },
   ];
 
+  // Close mobile menu on Escape key
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape" && isOpen) {
+        setIsOpen(false);
+      }
+    }
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen]);
+
   return (
-    <nav className="bg-black border-b border-gray-800 sticky top-0 z-50">
+    <nav className="bg-black border-b border-gray-800 sticky top-0 z-40" aria-label="Main Navigation">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between h-16">
-          <div className="flex items-center">
-            <Link href="/" className="flex items-center gap-2 group">
+        <div className="flex justify-between items-center h-16">
+          <div className="flex items-center gap-3">
+            <Link
+              href="/"
+              className="flex items-center gap-2 group rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+            >
               <div className="rounded-full group-hover:scale-105 transition-transform flex items-center justify-center">
-                <Image src="/logo.png" alt="Annapurna Logo" width={48} height={48} className="object-cover rounded-full" />
+                <Image
+                  src="/logo.png"
+                  alt="Annapurna Logo"
+                  width={40}
+                  height={40}
+                  className="object-cover rounded-full"
+                />
               </div>
-              <span className="font-bold text-2xl text-white">Annapurna</span>
+              <span className="font-bold text-2xl text-white tracking-tight">Annapurna</span>
             </Link>
           </div>
 
           {/* Desktop Menu */}
-          <div className="hidden md:flex items-center space-x-8">
+          <div className="hidden lg:flex items-center space-x-6">
             {links.map((link) => {
               const isActive = pathname === link.href;
               return (
                 <Link
                   key={link.name}
                   href={link.href}
-                  className={`text-sm font-medium relative py-2 ${
+                  className={`text-sm font-medium relative py-2 transition-colors rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold ${
                     isActive ? "text-white" : "text-gray-300 hover:text-white"
                   }`}
                 >
@@ -55,22 +78,36 @@ export default function Navbar() {
                 </Link>
               );
             })}
-            <Link
-              href="/donate"
-              className="px-4 py-2 bg-brand-gold text-brand-charcoal rounded-md font-bold hover:bg-yellow-500 transition-colors flex items-center gap-2"
-            >
-              <Heart size={16} /> Donate
-            </Link>
           </div>
 
-          {/* Mobile Menu Button */}
-          <div className="md:hidden flex items-center">
-            <button
-              onClick={() => setIsOpen(!isOpen)}
-              className="text-white p-2"
-            >
-              {isOpen ? <X size={24} /> : <Menu size={24} />}
-            </button>
+          {/* Right actions: Notifications & CTA */}
+          <div className="flex items-center gap-3">
+            {/* In-app Notification Bell */}
+            <NotificationBell />
+
+            {/* Desktop CTA */}
+            <div className="hidden sm:block">
+              <Link
+                href="/dashboard/donor"
+                className="px-4 py-2 bg-brand-gold text-brand-charcoal rounded-xl font-bold hover:bg-yellow-500 transition-colors flex items-center gap-2 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+              >
+                <Utensils size={16} aria-hidden="true" />
+                <span>Donate Food</span>
+              </Link>
+            </div>
+
+            {/* Mobile Menu Button */}
+            <div className="lg:hidden flex items-center">
+              <button
+                type="button"
+                onClick={() => setIsOpen(!isOpen)}
+                aria-expanded={isOpen}
+                aria-label={isOpen ? "Close main menu" : "Open main menu"}
+                className="text-white p-2 rounded-lg hover:bg-gray-800 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold"
+              >
+                {isOpen ? <X size={24} aria-hidden="true" /> : <Menu size={24} aria-hidden="true" />}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -82,7 +119,7 @@ export default function Navbar() {
             initial={{ opacity: 0, height: 0 }}
             animate={{ opacity: 1, height: "auto" }}
             exit={{ opacity: 0, height: 0 }}
-            className="md:hidden border-t border-gray-800 bg-black overflow-hidden"
+            className="lg:hidden border-t border-gray-800 bg-black overflow-hidden"
           >
             <div className="px-4 pt-2 pb-6 space-y-1">
               {links.map((link) => {
@@ -92,23 +129,24 @@ export default function Navbar() {
                     key={link.name}
                     href={link.href}
                     onClick={() => setIsOpen(false)}
-                    className={`block px-3 py-4 rounded-md text-base font-medium ${
+                    className={`block px-3 py-3 rounded-xl text-base font-medium transition-colors ${
                       isActive
                         ? "bg-gray-900 text-white border-l-4 border-brand-gold"
-                        : "text-gray-400 hover:bg-gray-800 hover:text-white border-l-4 border-transparent"
-                    }`}
+                        : "text-gray-300 hover:bg-gray-800 hover:text-white border-l-4 border-transparent"
+                    } focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold`}
                   >
                     {link.name}
                   </Link>
                 );
               })}
-              <div className="px-3 pt-4">
+              <div className="px-3 pt-4 sm:hidden">
                 <Link
-                  href="/donate"
+                  href="/dashboard/donor"
                   onClick={() => setIsOpen(false)}
-                  className="w-full flex justify-center items-center gap-2 px-4 py-3 bg-brand-gold text-brand-charcoal rounded-md font-bold"
+                  className="w-full flex justify-center items-center gap-2 px-4 py-3 bg-brand-gold text-brand-charcoal rounded-xl font-bold hover:bg-yellow-500 transition-colors"
                 >
-                  <Heart size={16} /> Donate
+                  <Utensils size={18} aria-hidden="true" />
+                  <span>Donate Food</span>
                 </Link>
               </div>
             </div>

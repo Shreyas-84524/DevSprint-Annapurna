@@ -1,17 +1,17 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { createClient } from "@/lib/supabase";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { getEventsService } from "@/services/events";
-import { Trash2, Plus, ArrowLeft, Calendar } from "lucide-react";
+import { EventDTO } from "@/types/contracts";
+import { Trash2, Plus, ArrowLeft, Calendar, AlertCircle, RefreshCw } from "lucide-react";
 import Link from "next/link";
 
 export default function AdminEventsPage() {
-  const supabase = createClient();
-  const eventsService = getEventsService(supabase);
+  const eventsService = useMemo(() => getEventsService(), []);
 
-  const [events, setEvents] = useState<any[]>([]);
+  const [events, setEvents] = useState<EventDTO[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -21,37 +21,51 @@ export default function AdminEventsPage() {
   
   const [showForm, setShowForm] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
-  const loadEvents = async () => {
+  const loadEvents = useCallback(async () => {
+    setLoading(true);
+    setError(null);
     try {
-      const { data } = await eventsService.getEvents();
-      if (data) setEvents(data);
-    } catch (err) {
-      console.error(err);
+      const { data, error: fetchErr } = await eventsService.getEvents();
+      if (fetchErr) {
+        setError(fetchErr.message || "Failed to load events.");
+      } else {
+        setEvents(data || []);
+      }
+    } catch {
+      setError("Network error loading events.");
     } finally {
       setLoading(false);
     }
-  };
+  }, [eventsService]);
 
   useEffect(() => {
     loadEvents();
-  }, []);
+  }, [loadEvents]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError(null);
+
+    if (!title.trim() || !description.trim() || !date || !location.trim()) {
+      setFormError("All required fields must be filled.");
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
       const payload = {
-        title,
-        description,
+        title: title.trim(),
+        description: description.trim(),
         date: new Date(date).toISOString(),
-        location,
-        image_url: imageUrl || "https://images.unsplash.com/photo-1542838132-92c53300491e?w=800"
+        location: location.trim(),
+        imageUrl: imageUrl.trim() || undefined,
       };
 
-      const { error } = await eventsService.createEvent(payload);
-      if (error) throw error;
+      const { error: createErr } = await eventsService.createEvent(payload);
+      if (createErr) throw createErr;
       
       setTitle("");
       setDescription("");
@@ -60,8 +74,8 @@ export default function AdminEventsPage() {
       setImageUrl("");
       setShowForm(false);
       await loadEvents();
-    } catch (err) {
-      console.error("Error creating event:", err);
+    } catch (err: any) {
+      setFormError(err.message || "Error creating event.");
     } finally {
       setIsSubmitting(false);
     }
@@ -70,143 +84,207 @@ export default function AdminEventsPage() {
   const handleDelete = async (id: string) => {
     if (!confirm("Are you sure you want to delete this event?")) return;
     try {
-      const { error } = await eventsService.deleteEvent(id);
-      if (error) throw error;
+      const { error: delErr } = await eventsService.deleteEvent(id);
+      if (delErr) alert(delErr.message || "Failed to delete event");
       await loadEvents();
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      alert(err.message || "Error deleting event");
     }
   };
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-      <Link href="/admin" className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-brand-charcoal font-bold mb-8">
-        <ArrowLeft size={16} /> Back to Command Center
+      <Link
+        href="/admin"
+        className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-brand-charcoal font-bold mb-8 rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold"
+      >
+        <ArrowLeft size={16} aria-hidden="true" />
+        <span>Back to Command Center</span>
       </Link>
 
-      <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-black text-brand-charcoal">Redistribution Events</h1>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-8">
+        <div>
+          <h1 className="text-3xl font-black text-brand-charcoal">Manage Community Events</h1>
+          <p className="text-gray-500 text-sm mt-1">Schedule food relief drives, community kitchens, and volunteer meetups.</p>
+        </div>
+
         <button
+          type="button"
           onClick={() => setShowForm(!showForm)}
-          className="px-4 py-2 bg-brand-charcoal text-white rounded-xl font-bold hover:bg-gray-800 transition-colors flex items-center gap-2"
+          className="inline-flex items-center gap-2 px-5 py-2.5 bg-brand-charcoal text-white rounded-xl font-bold hover:bg-gray-800 transition-colors shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold"
         >
-          <Plus size={18} /> {showForm ? "Cancel" : "Create Event"}
+          <Plus size={18} aria-hidden="true" />
+          <span>{showForm ? "Cancel" : "New Event"}</span>
         </button>
       </div>
 
       {showForm && (
-        <form onSubmit={handleCreate} className="bg-white p-8 rounded-3xl border border-gray-100 shadow-sm max-w-3xl mb-12 space-y-6">
-          <h2 className="text-xl font-bold text-brand-charcoal">New Event Details</h2>
-          
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Event Title</label>
-            <input
-              required
-              type="text"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-brand-gold"
-              placeholder="e.g., Bandra Food Redistribution Drive"
-            />
-          </div>
+        <form onSubmit={handleCreate} className="bg-white p-6 sm:p-8 rounded-3xl border border-gray-100 shadow-md mb-12 space-y-6">
+          <h2 className="text-xl font-bold text-brand-charcoal border-b pb-3">Schedule New Event</h2>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
-            <textarea
-              required
-              rows={3}
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-brand-gold"
-              placeholder="Briefly describe the event plan..."
-            ></textarea>
-          </div>
+          {formError && (
+            <div role="alert" className="p-4 bg-red-50 text-red-700 rounded-xl text-sm border border-red-200">
+              {formError}
+            </div>
+          )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Date & Time</label>
+              <label htmlFor="event-title" className="block text-sm font-bold text-gray-700 mb-2">
+                Event Title <span className="text-red-500">*</span>
+              </label>
               <input
+                id="event-title"
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
                 required
+                placeholder="Mega Weekend Surplus Drive"
+                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold text-brand-charcoal"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="event-date" className="block text-sm font-bold text-gray-700 mb-2">
+                Date & Time <span className="text-red-500">*</span>
+              </label>
+              <input
+                id="event-date"
                 type="datetime-local"
                 value={date}
                 onChange={(e) => setDate(e.target.value)}
-                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-brand-gold"
+                required
+                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold text-brand-charcoal bg-white"
               />
             </div>
+
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Location / Venue</label>
+              <label htmlFor="event-location" className="block text-sm font-bold text-gray-700 mb-2">
+                Location / Venue <span className="text-red-500">*</span>
+              </label>
               <input
-                required
+                id="event-location"
                 type="text"
                 value={location}
                 onChange={(e) => setLocation(e.target.value)}
-                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-brand-gold"
-                placeholder="Full address or landmark"
+                required
+                placeholder="Dadar Community Hall, Mumbai"
+                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold text-brand-charcoal"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="event-image" className="block text-sm font-bold text-gray-700 mb-2">
+                Banner Image URL <span className="text-gray-400 font-normal">(Optional)</span>
+              </label>
+              <input
+                id="event-image"
+                type="url"
+                value={imageUrl}
+                onChange={(e) => setImageUrl(e.target.value)}
+                placeholder="https://..."
+                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold text-brand-charcoal"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Cover Image URL</label>
-            <input
-              type="url"
-              value={imageUrl}
-              onChange={(e) => setImageUrl(e.target.value)}
-              className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-brand-gold"
-              placeholder="https://images.unsplash.com/photo-..."
+            <label htmlFor="event-desc" className="block text-sm font-bold text-gray-700 mb-2">
+              Event Description <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              id="event-desc"
+              rows={4}
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              required
+              placeholder="Provide briefing notes for volunteers and attendees..."
+              className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold text-brand-charcoal resize-y"
             />
           </div>
 
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="px-6 py-3 bg-brand-charcoal text-white font-bold rounded-xl shadow-md hover:bg-gray-800 disabled:opacity-50 transition-all flex items-center gap-2"
-          >
-            {isSubmitting ? "Creating..." : "Create Event"}
-          </button>
+          <div className="flex justify-end gap-3 pt-2">
+            <button
+              type="button"
+              onClick={() => setShowForm(false)}
+              className="px-5 py-2.5 border border-gray-200 text-gray-600 rounded-xl font-bold hover:bg-gray-50 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="px-6 py-2.5 bg-brand-charcoal text-white rounded-xl font-bold hover:bg-gray-800 transition-colors disabled:opacity-50"
+            >
+              {isSubmitting ? "Scheduling..." : "Schedule Event"}
+            </button>
+          </div>
         </form>
       )}
 
       {loading ? (
-        <div className="text-center py-12">
-          <span className="w-8 h-8 border-4 border-brand-gold border-t-transparent rounded-full animate-spin"></span>
+        <div className="text-center py-16 flex flex-col items-center" aria-live="polite">
+          <span className="w-8 h-8 border-4 border-brand-gold border-t-transparent rounded-full animate-spin mb-4" />
+          <p className="text-gray-500">Loading events...</p>
+        </div>
+      ) : error ? (
+        <div className="bg-white p-8 rounded-3xl border border-red-100 text-center max-w-md mx-auto">
+          <AlertCircle className="mx-auto text-red-500 mb-3" size={36} aria-hidden="true" />
+          <p className="text-gray-700 font-semibold mb-4">{error}</p>
+          <button
+            type="button"
+            onClick={loadEvents}
+            className="inline-flex items-center gap-2 px-5 py-2 bg-brand-charcoal text-white rounded-xl font-bold hover:bg-gray-800"
+          >
+            <RefreshCw size={14} aria-hidden="true" />
+            <span>Retry</span>
+          </button>
         </div>
       ) : events.length === 0 ? (
-        <div className="text-center py-12 text-gray-500 bg-gray-50 rounded-2xl border border-gray-100">
-          <Calendar className="mx-auto text-gray-300 mb-2" />
-          No scheduled events.
+        <div className="text-center py-16 bg-white rounded-3xl border border-gray-100 p-8">
+          <Calendar className="mx-auto text-gray-300 mb-3" size={40} aria-hidden="true" />
+          <h2 className="text-lg font-bold text-brand-charcoal mb-1">No Events Scheduled</h2>
+          <p className="text-gray-500 text-sm mb-4">Click &ldquo;New Event&rdquo; above to schedule your first drive.</p>
         </div>
       ) : (
         <div className="bg-white rounded-3xl border border-gray-100 shadow-sm overflow-hidden">
-          <table className="w-full border-collapse text-left">
-            <thead>
-              <tr className="bg-gray-50 text-gray-500 text-xs font-bold uppercase tracking-wider border-b border-gray-100">
-                <th className="p-4 sm:p-6 w-1/4">Event</th>
-                <th className="p-4 sm:p-6 w-1/3">Description</th>
-                <th className="p-4 sm:p-6">Date</th>
-                <th className="p-4 sm:p-6">Location</th>
-                <th className="p-4 sm:p-6 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100 text-sm">
-              {events.map(event => (
-                <tr key={event.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="p-4 sm:p-6 font-bold text-brand-charcoal">{event.title}</td>
-                  <td className="p-4 sm:p-6 text-gray-500 line-clamp-2">{event.description}</td>
-                  <td className="p-4 sm:p-6 text-gray-400">{new Date(event.date).toLocaleString()}</td>
-                  <td className="p-4 sm:p-6 text-gray-400 truncate max-w-[120px]">{event.location}</td>
-                  <td className="p-4 sm:p-6 text-right">
-                    <button
-                      onClick={() => handleDelete(event.id)}
-                      className="text-red-500 hover:text-red-700 p-2 transition-colors inline-flex items-center gap-1 font-bold"
-                    >
-                      <Trash2 size={16} /> Delete
-                    </button>
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-100 text-xs font-bold text-gray-500 uppercase tracking-wider">
+                  <th className="py-4 px-6">Event</th>
+                  <th className="py-4 px-6">Location</th>
+                  <th className="py-4 px-6">Date & Time</th>
+                  <th className="py-4 px-6 text-right">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-gray-100 text-sm text-gray-700">
+                {events.map((event) => (
+                  <tr key={event.id} className="hover:bg-gray-50/50 transition-colors">
+                    <td className="py-4 px-6 font-semibold text-brand-charcoal max-w-xs truncate">
+                      {event.title}
+                    </td>
+                    <td className="py-4 px-6 text-gray-500 max-w-xs truncate">
+                      {event.location}
+                    </td>
+                    <td className="py-4 px-6 text-gray-400 text-xs">
+                      {new Date(event.date).toLocaleDateString([], { month: "short", day: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit" })}
+                    </td>
+                    <td className="py-4 px-6 text-right">
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(event.id)}
+                        aria-label={`Delete event ${event.title}`}
+                        className="p-1.5 text-gray-400 hover:text-red-600 rounded transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-red-500"
+                      >
+                        <Trash2 size={16} aria-hidden="true" />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>
