@@ -3,7 +3,7 @@ import Link from "next/link";
 
 export const metadata = {
   title: "Get Started | Annapurna Food Rescue",
-  description: "Join Annapurna as a food donor or requester using fast, secure mobile number verification.",
+  description: "Join Annapurna as a food donor or requester using fast, secure passwordless email verification.",
 };
 
 export default function RegisterPage() {
@@ -18,7 +18,7 @@ export default function RegisterPage() {
             Join the Annapurna Network
           </h1>
           <p className="text-base sm:text-lg text-gray-600 max-w-xl mx-auto">
-            Get started in seconds with your mobile number. No passwords required.
+            Get started in seconds with your email address. No passwords required.
           </p>
         </div>
 
@@ -47,7 +47,7 @@ export default function RegisterPage() {
                 href="/login/donor"
                 className="w-full py-4 px-6 rounded-2xl bg-brand-charcoal text-white font-bold text-sm flex items-center justify-center gap-2 shadow-md hover:bg-gray-800 transition-all"
               >
-                <span>Register with Mobile OTP</span>
+                <span>Register with Email OTP</span>
                 <ArrowRight size={18} aria-hidden="true" />
               </Link>
             </div>
@@ -77,7 +77,7 @@ export default function RegisterPage() {
                 href="/login/requester"
                 className="w-full py-4 px-6 rounded-2xl bg-emerald-700 text-white font-bold text-sm flex items-center justify-center gap-2 shadow-md hover:bg-emerald-800 transition-all"
               >
-                <span>Register with Mobile OTP</span>
+                <span>Register with Email OTP</span>
                 <ArrowRight size={18} aria-hidden="true" />
               </Link>
             </div>

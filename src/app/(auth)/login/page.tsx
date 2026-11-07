@@ -52,7 +52,7 @@ export default function LoginPage() {
                 </li>
                 <li className="flex items-center gap-2">
                   <ShieldCheck size={16} className="text-brand-eco flex-shrink-0" />
-                  <span>Instant sign-in with your mobile number</span>
+                  <span>Instant sign-in with passwordless email OTP</span>
                 </li>
               </ul>
             </div>
