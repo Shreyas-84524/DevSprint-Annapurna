@@ -6,6 +6,7 @@
  */
 
 import { getServiceRoleClient } from '@/lib/supabase-admin';
+import { createWorkflowNotification } from '@/server/notifications';
 import { AuthenticatedUser } from '@/server/auth';
 import {
   VolunteerTaskSummaryDTO,
@@ -198,6 +199,46 @@ export async function acceptDeliveryTask(
     }
 
     throw new DeliveryWorkflowError(error.message || 'Failed to accept delivery task.', 'ACCEPT_DELIVERY_FAILED', 500);
+  }
+
+  // Dispatch in-app notifications to donor and requester (idempotent, retry-safe)
+  try {
+    const { data: deliv } = await supabase
+      .from('deliveries')
+      .select('donor_id, requester_id')
+      .eq('id', data.delivery_id)
+      .maybeSingle();
+
+    if (deliv) {
+      if (deliv.donor_id) {
+        await createWorkflowNotification(
+          {
+            userId: deliv.donor_id,
+            title: 'Volunteer Assigned',
+            message: 'A volunteer has accepted the delivery for your food listing.',
+            type: 'delivery',
+            link: '/dashboard/donor',
+            idempotencyKey: `notif-assigned-donor-${data.delivery_id}`,
+          },
+          supabase
+        );
+      }
+      if (deliv.requester_id) {
+        await createWorkflowNotification(
+          {
+            userId: deliv.requester_id,
+            title: 'Volunteer Assigned',
+            message: 'A volunteer has accepted your delivery and will pick up the food soon.',
+            type: 'delivery',
+            link: '/dashboard/beneficiary',
+            idempotencyKey: `notif-assigned-requester-${data.delivery_id}`,
+          },
+          supabase
+        );
+      }
+    }
+  } catch (_err) {
+    // Non-fatal notification error
   }
 
   return {
@@ -412,6 +453,178 @@ export async function transitionDelivery(
     if (message.includes('INVALID_QC_RESULT') || message.includes('CANCELLATION_REASON_REQUIRED')) throw new DeliveryWorkflowError(message, 'INVALID_TRANSITION_INPUT', 400);
     throw new DeliveryWorkflowError(message || 'Delivery transition failed.', 'TRANSITION_FAILED', 500);
   }
+  // Dispatch in-app notifications on workflow state transition (idempotent, retry-safe)
+  try {
+    const { data: deliv } = await supabase
+      .from('deliveries')
+      .select('donor_id, requester_id, volunteer_id')
+      .eq('id', data.delivery_id)
+      .maybeSingle();
+
+    if (deliv) {
+      if (action === 'arrive_pickup' && deliv.donor_id) {
+        await createWorkflowNotification(
+          {
+            userId: deliv.donor_id,
+            title: 'Volunteer at Pickup',
+            message: 'The volunteer has arrived to inspect and collect the food.',
+            type: 'delivery',
+            link: '/dashboard/donor',
+            idempotencyKey: `notif-arrive-donor-${data.delivery_id}`,
+          },
+          supabase
+        );
+      } else if (action === 'qc') {
+        if (input.result === 'pass' && deliv.donor_id) {
+          await createWorkflowNotification(
+            {
+              userId: deliv.donor_id,
+              title: 'Quality Check Passed',
+              message: 'The volunteer verified the food passed safety inspection.',
+              type: 'qc',
+              link: '/dashboard/donor',
+              idempotencyKey: `notif-qcpass-donor-${data.delivery_id}`,
+            },
+            supabase
+          );
+        } else if (input.result === 'fail') {
+          if (deliv.donor_id) {
+            await createWorkflowNotification(
+              {
+                userId: deliv.donor_id,
+                title: 'Quality Check Failed',
+                message: 'The food did not pass inspection and cannot be delivered.',
+                type: 'qc',
+                link: '/dashboard/donor',
+                idempotencyKey: `notif-qcfail-donor-${data.delivery_id}`,
+              },
+              supabase
+            );
+          }
+          if (deliv.requester_id) {
+            await createWorkflowNotification(
+              {
+                userId: deliv.requester_id,
+                title: 'Delivery Cancelled: QC Failed',
+                message: 'The food did not pass inspection and the delivery was cancelled.',
+                type: 'qc',
+                link: '/dashboard/beneficiary',
+                idempotencyKey: `notif-qcfail-requester-${data.delivery_id}`,
+              },
+              supabase
+            );
+          }
+        }
+      } else if (action === 'collect' && deliv.requester_id) {
+        await createWorkflowNotification(
+          {
+            userId: deliv.requester_id,
+            title: 'Food Collected',
+            message: 'The volunteer has collected your food and will begin drop-off shortly.',
+            type: 'delivery',
+            link: '/dashboard/beneficiary',
+            idempotencyKey: `notif-collect-requester-${data.delivery_id}`,
+          },
+          supabase
+        );
+      } else if (action === 'start_dropoff' && deliv.requester_id) {
+        await createWorkflowNotification(
+          {
+            userId: deliv.requester_id,
+            title: 'Out for Delivery',
+            message: 'The volunteer is heading to your delivery location.',
+            type: 'delivery',
+            link: '/dashboard/beneficiary',
+            idempotencyKey: `notif-dropoff-requester-${data.delivery_id}`,
+          },
+          supabase
+        );
+      } else if (action === 'handover' && deliv.requester_id) {
+        await createWorkflowNotification(
+          {
+            userId: deliv.requester_id,
+            title: 'Food Handed Over',
+            message: 'The volunteer has recorded delivery handover. Please confirm receipt in your dashboard.',
+            type: 'delivery',
+            link: '/dashboard/beneficiary',
+            idempotencyKey: `notif-handover-requester-${data.delivery_id}`,
+          },
+          supabase
+        );
+      } else if (action === 'confirm_receipt') {
+        if (deliv.donor_id) {
+          await createWorkflowNotification(
+            {
+              userId: deliv.donor_id,
+              title: 'Delivery Complete',
+              message: 'The recipient confirmed receipt of the food. Thank you for your donation!',
+              type: 'delivery',
+              link: '/dashboard/donor',
+              idempotencyKey: `notif-complete-donor-${data.delivery_id}`,
+            },
+            supabase
+          );
+        }
+        if (deliv.volunteer_id) {
+          await createWorkflowNotification(
+            {
+              userId: deliv.volunteer_id,
+              title: 'Delivery Complete',
+              message: 'The recipient confirmed receipt. Thank you for your service!',
+              type: 'delivery',
+              link: '/dashboard/volunteer',
+              idempotencyKey: `notif-complete-volunteer-${data.delivery_id}`,
+            },
+            supabase
+          );
+        }
+      } else if (action === 'cancel') {
+        const notifMsg = `Delivery has been cancelled (${input.reason || 'reason not specified'}).`;
+        if (deliv.donor_id && deliv.donor_id !== actor.id) {
+          await createWorkflowNotification(
+            {
+              userId: deliv.donor_id,
+              title: 'Delivery Cancelled',
+              message: notifMsg,
+              type: 'delivery',
+              link: '/dashboard/donor',
+              idempotencyKey: `notif-cancel-donor-${data.delivery_id}`,
+            },
+            supabase
+          );
+        }
+        if (deliv.requester_id && deliv.requester_id !== actor.id) {
+          await createWorkflowNotification(
+            {
+              userId: deliv.requester_id,
+              title: 'Delivery Cancelled',
+              message: notifMsg,
+              type: 'delivery',
+              link: '/dashboard/beneficiary',
+              idempotencyKey: `notif-cancel-requester-${data.delivery_id}`,
+            },
+            supabase
+          );
+        }
+        if (deliv.volunteer_id && deliv.volunteer_id !== actor.id) {
+          await createWorkflowNotification(
+            {
+              userId: deliv.volunteer_id,
+              title: 'Delivery Cancelled',
+              message: notifMsg,
+              type: 'delivery',
+              link: '/dashboard/volunteer',
+              idempotencyKey: `notif-cancel-volunteer-${data.delivery_id}`,
+            },
+            supabase
+          );
+        }
+      }
+    }
+  } catch (_err) {
+    // Non-fatal notification error
+  }
+
   return {
     deliveryId: data.delivery_id,
     status: data.status as DeliveryStatus,

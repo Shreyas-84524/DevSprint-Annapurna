@@ -6,6 +6,7 @@
  */
 
 import { getServiceRoleClient } from '@/lib/supabase-admin';
+import { createWorkflowNotification } from '@/server/notifications';
 import {
   CreateListingRequest,
   UpdateListingRequest,
@@ -772,6 +773,31 @@ export async function claimListing(
     }
 
     throw new ListingWorkflowError(error.message || 'Failed to claim food listing.', 'CLAIM_FAILED', 500);
+  }
+
+  // Dispatch in-app notification to donor (idempotent, retry-safe)
+  try {
+    const { data: listingData } = await supabase
+      .from('food_listings')
+      .select('donor_id, title')
+      .eq('id', listingId)
+      .maybeSingle();
+
+    if (listingData?.donor_id) {
+      await createWorkflowNotification(
+        {
+          userId: listingData.donor_id,
+          title: 'Listing Claimed',
+          message: `Your food listing "${listingData.title}" has been claimed.`,
+          type: 'claim',
+          link: '/dashboard/donor',
+          idempotencyKey: `notif-claim-${data.claim_id}`,
+        },
+        supabase
+      );
+    }
+  } catch (_err) {
+    // Non-fatal notification failure
   }
 
   return {

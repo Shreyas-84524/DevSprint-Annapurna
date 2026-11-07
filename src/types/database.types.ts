@@ -14,6 +14,209 @@ export type Database = {
   }
   public: {
     Tables: {
+      blogs: {
+        Row: {
+          id: string
+          title: string
+          slug: string
+          content: string
+          image_url: string | null
+          author_id: string | null
+          category_id: string | null
+          status: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          title: string
+          slug: string
+          content: string
+          image_url?: string | null
+          author_id?: string | null
+          category_id?: string | null
+          status?: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          title?: string
+          slug?: string
+          content?: string
+          image_url?: string | null
+          author_id?: string | null
+          category_id?: string | null
+          status?: string
+          created_at?: string
+        }
+      }
+      blog_categories: {
+        Row: {
+          id: string
+          name: string
+          slug: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          slug: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          slug?: string
+        }
+      }
+      events: {
+        Row: {
+          id: string
+          title: string
+          description: string
+          date: string
+          location: string
+          image_url: string | null
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          title: string
+          description: string
+          date: string
+          location: string
+          image_url?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          title?: string
+          description?: string
+          date?: string
+          location?: string
+          image_url?: string | null
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      faqs: {
+        Row: {
+          id: string
+          question: string
+          answer: string
+          category: string
+          display_order: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          question: string
+          answer: string
+          category?: string
+          display_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          question?: string
+          answer?: string
+          category?: string
+          display_order?: number
+          created_at?: string
+          updated_at?: string
+        }
+      }
+      gallery: {
+        Row: {
+          id: string
+          title: string
+          image_url: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          title: string
+          image_url: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          title?: string
+          image_url?: string
+          created_at?: string
+        }
+      }
+      contact_messages: {
+        Row: {
+          id: string
+          name: string
+          email: string
+          phone: string | null
+          message: string
+          status: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          email: string
+          phone?: string | null
+          message: string
+          status?: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          email?: string
+          phone?: string | null
+          message?: string
+          status?: string
+          created_at?: string
+        }
+      }
+      notifications: {
+        Row: {
+          id: string
+          user_id: string
+          title: string
+          message: string
+          type: string
+          link: string | null
+          read: boolean
+          idempotency_key: string | null
+          metadata: Json
+          created_at: string
+          read_at: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          title: string
+          message: string
+          type?: string
+          link?: string | null
+          read?: boolean
+          idempotency_key?: string | null
+          metadata?: Json
+          created_at?: string
+          read_at?: string | null
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          title?: string
+          message?: string
+          type?: string
+          link?: string | null
+          read?: boolean
+          idempotency_key?: string | null
+          metadata?: Json
+          created_at?: string
+          read_at?: string | null
+        }
+      }
       claims: {
         Row: {
           cancelled_at: string | null

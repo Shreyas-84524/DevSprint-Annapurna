@@ -512,3 +512,161 @@ export interface DeliveryRouteDTO extends RouteCalculationDTO {
 // Convenience Type Aliases
 export type ListingSummaryDTO = PublicListingSummaryDTO;
 export type AvailableTaskDTO = VolunteerTaskSummaryDTO;
+
+
+// 12. Notification Contracts
+export type NotificationType = 'info' | 'claim' | 'delivery' | 'qc' | 'system';
+
+export interface NotificationDTO {
+  id: string;
+  userId: string;
+  title: string;
+  message: string;
+  type: NotificationType;
+  link?: string | null;
+  read: boolean;
+  metadata?: Record<string, any>;
+  createdAt: string;
+  readAt?: string | null;
+}
+
+export interface NotificationsResponseDTO {
+  notifications: NotificationDTO[];
+  unreadCount: number;
+}
+
+export interface CreateNotificationInput {
+  userId: string;
+  title: string;
+  message: string;
+  type?: NotificationType;
+  link?: string | null;
+  idempotencyKey?: string | null;
+  metadata?: Record<string, any>;
+}
+
+// 13. Contact Contracts
+export interface ContactSubmissionRequest {
+  name: string;
+  email: string;
+  phone?: string;
+  message: string;
+}
+
+export interface ContactMessageDTO {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string | null;
+  message: string;
+  status: 'unread' | 'read' | 'archived';
+  createdAt: string;
+}
+
+// 14. CMS Contracts
+export interface BlogPostDTO {
+  id: string;
+  title: string;
+  slug: string;
+  content: string;
+  imageUrl?: string | null;
+  authorId?: string | null;
+  categoryId?: string | null;
+  status: 'draft' | 'published';
+  createdAt: string;
+  category?: {
+    id: string;
+    name: string;
+    slug: string;
+  } | null;
+}
+
+export interface CreateBlogPostRequest {
+  title: string;
+  slug?: string;
+  content: string;
+  imageUrl?: string | null;
+  categoryId?: string | null;
+  status?: 'draft' | 'published';
+}
+
+export interface UpdateBlogPostRequest {
+  title?: string;
+  slug?: string;
+  content?: string;
+  imageUrl?: string | null;
+  categoryId?: string | null;
+  status?: 'draft' | 'published';
+}
+
+export interface EventDTO {
+  id: string;
+  title: string;
+  description: string;
+  date: string;
+  location: string;
+  imageUrl?: string | null;
+  createdAt: string;
+}
+
+export interface CreateEventRequest {
+  title: string;
+  description: string;
+  date: string;
+  location: string;
+  imageUrl?: string | null;
+}
+
+export interface UpdateEventRequest {
+  title?: string;
+  description?: string;
+  date?: string;
+  location?: string;
+  imageUrl?: string | null;
+}
+
+export interface FaqDTO {
+  id: string;
+  question: string;
+  answer: string;
+  category: string;
+  displayOrder: number;
+  createdAt: string;
+}
+
+export interface CreateFaqRequest {
+  question: string;
+  answer: string;
+  category?: string;
+  displayOrder?: number;
+}
+
+export interface UpdateFaqRequest {
+  question?: string;
+  answer?: string;
+  category?: string;
+  displayOrder?: number;
+}
+
+export interface GalleryItemDTO {
+  id: string;
+  title: string;
+  imageUrl: string;
+  createdAt: string;
+}
+
+export interface CreateGalleryItemRequest {
+  title: string;
+  imageUrl: string;
+}
+
+export interface AdminStatsDTO {
+  totalUsers: number;
+  totalDonors: number;
+  totalRequesters: number;
+  totalVolunteers: number;
+  activeListings: number;
+  completedDeliveries: number;
+  pendingDeliveries: number;
+  unreadMessages: number;
+}
