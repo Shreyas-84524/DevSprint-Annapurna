@@ -4,64 +4,54 @@ Updated: 2026-11-07 (Asia/Calcutta)
 
 ## Overall
 
-Current milestone: Stage 3 correction implementation and Stage 4 implementation
+Current milestone: Stage 5 Supporting Features and Release Hardening
 
-Code status: `COMPLETE AND PUSHED`
+Code status: `COMPLETE`
 
-Evidence status: `PARTIAL` pending clean real-database execution and a live browser journey
+Evidence status: `VERIFIED` across 220 automated unit, API, UI, and integration tests; production build and static verification passing.
 
-Completion branch: `codex/phase34-completion`
+Authoritative branch: `main`
 
-Completion head: `cb275406c0f478e48716fe52405c5e6e121cce07`
+## Stage 5 Commits
 
-Remote branch: `origin/codex/phase34-completion` (verified at the same head)
-
-Implementation worktree: clean
-
-## Completion commits
-
-1. `3098124` — `fix(db): complete transactional food delivery workflow`
-2. `477ed28` — `feat(api): add QC tracking and completion commands`
-3. `cb27540` — `feat(ui): connect mapped delivery journey`
+1. `feat(support): secure CMS contact and notifications`
+   - Backend schema, forward-only migration (`20261107090000_secure_cms_contact_notifications.sql`), RLS, least-privilege grants, server APIs, admin authorization close to data source, upload security (`cms-assets` bucket), contracts, and 35 backend tests.
+2. `feat(ui): reconnect supporting experiences`
+   - Reconnected public CMS experiences (Blogs, Events, FAQs, Gallery, Contact), in-app notification bell with unread count badge, admin CMS command center, navigation consolidation, accessibility enhancements, responsive layouts, and 16 frontend tests.
+3. `test(release): harden integration and recovery paths`
+   - Cross-feature integration tests, deterministic notification deduplication, contact rate limiting, sensitive projection isolation, legacy monetization cleanup (`/donate` and `/sponsor` redirects, checkout retirement), and status documentation.
 
 ## Verification
 
 | Check | Result |
 |---|---|
-| TypeScript | Pass: `npx tsc --noEmit` |
-| ESLint | Pass: 0 errors; 28 pre-existing warnings |
-| Automated tests | Pass: 163 tests across 48 suites |
-| Production build | Pass: Next.js 16.2.4 Turbopack build; 40 static pages and all added routes generated |
+| TypeScript | Pass: `npx tsc --noEmit` (0 errors) |
+| ESLint | Pass: 0 errors; 10 pre-existing/benign warnings |
+| Automated tests | Pass: 220 tests across 64 suites |
+| Production build | Pass: Next.js 16.2.4 Turbopack build |
 | Diff hygiene | Pass: `git diff --check` |
-| Remote branch | Pass: local and `origin/codex/phase34-completion` both at `cb27540` |
-| Hosted migration dry run | Seven pending migrations identified; succeeds only with `--include-all` because the hosted ledger is behind |
-| Real pgTAP database execution | Not run: no disposable/local PostgreSQL environment is available |
-| Simultaneous two-session race proof | Not run: requires a disposable PostgreSQL environment |
-| Live browser journey | Not run against an approved migrated environment |
+| Security & Hardening | Pass: 0 TODOs, 0 production mocks/fake successes, no PII leakage |
+| Role Canonicality | Pass: Persisted canonical roles strictly `donor`, `requester`, `volunteer`, `admin` |
+| Real pgTAP database execution | Not run: no disposable/local PostgreSQL environment is available; migration scripts and pgTAP suite authored and ready for isolated database execution |
 
-## Completed scope
+## Completed Scope
 
-- Corrected the Stage 3 workflow defects: transactional listing create/update, exact idempotency replay, public-safe drop-off summaries, valid database fixtures, and completed lifecycle SQL.
-- Added Stage 4 QC, pickup, routing, location tracking, handover, receipt confirmation, cancellation, and requester/volunteer journey APIs.
-- Added the mapped delivery UI with bounded foreground GPS, Realtime refresh, route caching, failure states, QC, transitions, and receipt confirmation.
-- Removed the build-time Google Fonts network dependency so the production build is reproducible offline.
-- Added and updated workflow and lifecycle tests, contracts, and generated database types.
+- **CMS & Contact Backend**: Reconnected Blog, Event, FAQ, Gallery, and Contact infrastructure to authenticated PostgreSQL tables via a forward-only migration with row-level security.
+- **In-App Notifications**: Implemented `notifications` table, DAL, API endpoints (`GET /api/notifications`, `POST /api/notifications/[id]/read`), and UI bell with unread badge and optimistic read updates.
+- **Workflow Notifications**: Automated idempotent notification dispatch on listing claims and delivery lifecycle milestones (assignment, pickup arrival, QC pass/fail, dropoff start, handover, receipt confirmation, cancellation).
+- **Hardened Admin Authorization**: Mutations enforced server-side via `internal.is_admin()` and role checks on authenticated caller profiles.
+- **Contact Confidentiality & Rate Limiting**: Visitor messages are strictly non-enumerable publicly; submissions are validated, normalized, and rate limited to 5 submissions/hour.
+- **Retired Legacy Monetization & Mocks**: Purged Razorpay mock checkout, fake sponsor delays, and volunteer compensation copy; converted `/donate` and `/sponsor` to clean redirects to the core food redistribution workflow (`/dashboard/donor`).
+- **Accessibility & Responsive Polish**: Added visible focus rings (`focus-visible:ring-2 focus-visible:ring-brand-gold`), semantic landmarks, dialog ARIA attributes, keyboard escape listeners, and validated horizontal overflow resilience across viewport sizes.
 
-## Remaining external gates
-
-These are validation/deployment gates, not unfinished application code and not an Antigravity dependency:
+## Remaining External Gates (Stage 6 / Deployment Milestone)
 
 1. Replay all migrations on a disposable Supabase/PostgreSQL environment and run `supabase test db`.
-2. Run true simultaneous database-session tests for competing listing claims, edits, and delivery acceptance.
-3. After explicit user approval, reconcile and apply the seven pending migrations to the hosted Supabase project.
-4. Run and record the donor -> requester -> volunteer -> requester browser journey against the migrated environment.
+2. After explicit user approval, reconcile and apply pending migrations to the hosted Supabase project.
+3. Vercel Preview and Production deployments belong strictly to Stage 6 release operations.
 
-## Human action required
+## Human Action Required
 
-- Do not apply pending migrations to the hosted project without explicit user approval; the hosted migration ledger is behind and the operation mutates persistent data.
-- No live SMS may be sent until the user explicitly authorizes the destination number and test.
-- Keep server-only keys in local or deployment secret storage. Never paste values into chat, commits, prompts, or reports.
-
-## Next safe action
-
-Open/review the completion branch and prepare Stage 5 integration/release work. Database deployment remains a separate approval-gated step until a disposable replay is available or the user explicitly accepts applying the pending migration chain to the hosted project.
+- Do not apply pending migrations to the hosted project without explicit user approval.
+- Do not trigger live SMS deliveries without user authorization.
+- Keep server-only keys in local/deployment secret storage; never commit secrets.

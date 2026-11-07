@@ -12,7 +12,9 @@ export default function AdminDashboard() {
     totalDonors: 0,
     totalRequesters: 0,
     totalVolunteers: 0,
-    unreadContactMessages: 0,
+    unreadMessages: 0,
+    totalUsers: 0,
+    pendingDeliveries: 0,
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -130,8 +132,8 @@ export default function AdminDashboard() {
                 <MessageSquare className="text-purple-500" size={18} aria-hidden="true" />
               </div>
               <div className="flex items-baseline gap-2">
-                <h2 className="text-2xl sm:text-3xl font-black text-brand-charcoal">{stats.unreadContactMessages}</h2>
-                {stats.unreadContactMessages > 0 && (
+                <h2 className="text-2xl sm:text-3xl font-black text-brand-charcoal">{stats.unreadMessages}</h2>
+                {stats.unreadMessages > 0 && (
                   <span className="text-xs text-purple-600 font-bold bg-purple-50 px-2 py-0.5 rounded-full">New</span>
                 )}
               </div>
@@ -226,9 +228,9 @@ export default function AdminDashboard() {
                     <h3 className="font-bold text-lg text-brand-charcoal group-hover:text-purple-600 transition-colors">
                       Visitor Messages
                     </h3>
-                    {stats.unreadContactMessages > 0 && (
+                    {stats.unreadMessages > 0 && (
                       <span className="bg-brand-gold text-black text-xs font-bold px-2 py-0.5 rounded-full">
-                        {stats.unreadContactMessages}
+                        {stats.unreadMessages}
                       </span>
                     )}
                   </div>
