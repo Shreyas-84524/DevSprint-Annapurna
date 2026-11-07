@@ -14,7 +14,7 @@ export const getNotificationsService = () => {
           throw new Error(`Failed to fetch notifications: ${res.statusText}`);
         }
         const json = await res.json();
-        return { data: json.notifications || [], error: null };
+        return { data: json.data?.notifications ?? json.notifications ?? [], error: null };
       } catch (err: any) {
         return { data: null, error: err };
       }
@@ -29,7 +29,7 @@ export const getNotificationsService = () => {
           throw new Error(`Failed to mark notification as read: ${res.statusText}`);
         }
         const json = await res.json();
-        return { data: json.notification || null, error: null };
+        return { data: json.data ?? json.notification ?? null, error: null };
       } catch (err: any) {
         return { data: null, error: err };
       }

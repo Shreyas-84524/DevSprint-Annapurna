@@ -141,6 +141,7 @@ class MockSupportingDB {
       date: new Date(Date.now() + 7 * 86400000).toISOString(),
       location: 'Bandra West, Mumbai',
       image_url: 'https://images.unsplash.com/photo-1542838132-92c53300491e',
+      is_published: true,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     });
@@ -152,6 +153,7 @@ class MockSupportingDB {
       answer: 'Register as a donor, complete phone verification, and list your edible surplus with pickup timing.',
       category: 'Donation',
       display_order: 1,
+      is_published: true,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     });
@@ -161,6 +163,7 @@ class MockSupportingDB {
       id: 'gal-001',
       title: 'Distribution at Slum Community',
       image_url: 'https://images.unsplash.com/photo-1488521787991-ed7bbaae773c',
+      is_published: true,
       created_at: new Date().toISOString(),
     });
 
@@ -777,6 +780,31 @@ describe('Supporting Features & Release Hardening Backend Suite', () => {
       const claimNotifs = donorRes.notifications.filter((n: any) => n.idempotency_key === key || n.id === first.id);
       assert.strictEqual(claimNotifs.length, 1);
     });
+
+    it('rejects mismatched notification retries and unsafe navigation links', async () => {
+      const input = {
+        userId: 'donor-001',
+        title: 'Listing Claimed',
+        message: 'Your listing was claimed.',
+        type: 'claim' as const,
+        link: '/dashboard/donor',
+        idempotencyKey: 'notif-exact-retry-check',
+      };
+      await createWorkflowNotification(input, db);
+
+      await assert.rejects(
+        () => createWorkflowNotification({ ...input, userId: 'requester-001' }, db),
+        (err: any) => err instanceof NotificationError && err.code === 'IDEMPOTENCY_KEY_REUSED'
+      );
+      await assert.rejects(
+        () => createWorkflowNotification({
+          ...input,
+          idempotencyKey: 'notif-unsafe-link',
+          link: 'javascript:alert(1)',
+        }, db),
+        (err: any) => err instanceof NotificationError && err.code === 'INVALID_NOTIFICATION_LINK'
+      );
+    });
   });
 
   // ============================================================
@@ -827,7 +855,7 @@ describe('Supporting Features & Release Hardening Backend Suite', () => {
     });
 
     it('succeeds for valid admin upload and generates public storage URL', async () => {
-      const buffer = Buffer.from('valid jpeg image bytes');
+      const buffer = Buffer.from([0xff, 0xd8, 0xff, 0xdb, 0x00, 0x43]);
       const result = await uploadCmsAsset(
         'admin-001',
         { buffer, fileName: 'photo.jpg', mimeType: 'image/jpeg', size: buffer.length },

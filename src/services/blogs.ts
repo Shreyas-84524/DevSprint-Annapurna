@@ -30,7 +30,7 @@ export const getBlogsService = () => {
           throw new Error(`Failed to fetch blogs: ${res.statusText}`);
         }
         const json = await res.json();
-        return { data: json.blogs || [], error: null };
+        return { data: json.data ?? json.blogs ?? [], error: null };
       } catch (err: any) {
         return { data: null, error: err };
       }
@@ -45,7 +45,8 @@ export const getBlogsService = () => {
           throw new Error(`Failed to fetch blog: ${res.statusText}`);
         }
         const json = await res.json();
-        const found = json.blogs?.find((b: BlogPostDTO) => b.slug === slug) || null;
+        const blogs: BlogPostDTO[] = json.data ?? json.blogs ?? [];
+        const found = blogs.find((b: BlogPostDTO) => b.slug === slug) || null;
         return { data: found, error: null };
       } catch (err: any) {
         return { data: null, error: err };
@@ -61,10 +62,10 @@ export const getBlogsService = () => {
         });
         if (!res.ok) {
           const errBody = await res.json().catch(() => ({}));
-          throw new Error(errBody.error || `Failed to create blog: ${res.statusText}`);
+          throw new Error(errBody.error?.message || `Failed to create blog: ${res.statusText}`);
         }
         const json = await res.json();
-        return { data: json.blog || null, error: null };
+        return { data: json.data ?? json.blog ?? null, error: null };
       } catch (err: any) {
         return { data: null, error: err };
       }
@@ -79,10 +80,10 @@ export const getBlogsService = () => {
         });
         if (!res.ok) {
           const errBody = await res.json().catch(() => ({}));
-          throw new Error(errBody.error || `Failed to update blog: ${res.statusText}`);
+          throw new Error(errBody.error?.message || `Failed to update blog: ${res.statusText}`);
         }
         const json = await res.json();
-        return { data: json.blog || null, error: null };
+        return { data: json.data ?? json.blog ?? null, error: null };
       } catch (err: any) {
         return { data: null, error: err };
       }
@@ -95,7 +96,7 @@ export const getBlogsService = () => {
         });
         if (!res.ok) {
           const errBody = await res.json().catch(() => ({}));
-          throw new Error(errBody.error || `Failed to delete blog: ${res.statusText}`);
+          throw new Error(errBody.error?.message || `Failed to delete blog: ${res.statusText}`);
         }
         return { error: null };
       } catch (err: any) {

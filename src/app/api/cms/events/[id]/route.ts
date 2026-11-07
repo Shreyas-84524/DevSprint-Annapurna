@@ -27,7 +27,7 @@ export async function PATCH(
     if (err instanceof CmsError) {
       return NextResponse.json({ data: null, error: { code: err.code, message: err.message } }, { status: err.status });
     }
-    return NextResponse.json({ data: null, error: { code: 'INTERNAL_ERROR', message: err.message } }, { status: 500 });
+    return NextResponse.json({ data: null, error: { code: 'INTERNAL_ERROR', message: 'The CMS request could not be completed.' } }, { status: 500 });
   }
 }
 
@@ -51,6 +51,6 @@ export async function DELETE(
     if (err instanceof CmsError) {
       return NextResponse.json({ data: null, error: { code: err.code, message: err.message } }, { status: err.status });
     }
-    return NextResponse.json({ data: null, error: { code: 'INTERNAL_ERROR', message: err.message } }, { status: 500 });
+    return NextResponse.json({ data: null, error: { code: 'INTERNAL_ERROR', message: 'The CMS request could not be completed.' } }, { status: 500 });
   }
 }

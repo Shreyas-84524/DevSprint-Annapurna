@@ -11,7 +11,7 @@ export const getFaqsService = () => {
           throw new Error(`Failed to fetch FAQs: ${res.statusText}`);
         }
         const json = await res.json();
-        return { data: json.faqs || [], error: null };
+        return { data: json.data ?? json.faqs ?? [], error: null };
       } catch (err: any) {
         return { data: null, error: err };
       }
@@ -26,10 +26,10 @@ export const getFaqsService = () => {
         });
         if (!res.ok) {
           const errBody = await res.json().catch(() => ({}));
-          throw new Error(errBody.error || `Failed to create FAQ: ${res.statusText}`);
+          throw new Error(errBody.error?.message || `Failed to create FAQ: ${res.statusText}`);
         }
         const json = await res.json();
-        return { data: json.faq || null, error: null };
+        return { data: json.data ?? json.faq ?? null, error: null };
       } catch (err: any) {
         return { data: null, error: err };
       }
@@ -44,10 +44,10 @@ export const getFaqsService = () => {
         });
         if (!res.ok) {
           const errBody = await res.json().catch(() => ({}));
-          throw new Error(errBody.error || `Failed to update FAQ: ${res.statusText}`);
+          throw new Error(errBody.error?.message || `Failed to update FAQ: ${res.statusText}`);
         }
         const json = await res.json();
-        return { data: json.faq || null, error: null };
+        return { data: json.data ?? json.faq ?? null, error: null };
       } catch (err: any) {
         return { data: null, error: err };
       }
@@ -60,7 +60,7 @@ export const getFaqsService = () => {
         });
         if (!res.ok) {
           const errBody = await res.json().catch(() => ({}));
-          throw new Error(errBody.error || `Failed to delete FAQ: ${res.statusText}`);
+          throw new Error(errBody.error?.message || `Failed to delete FAQ: ${res.statusText}`);
         }
         return { error: null };
       } catch (err: any) {

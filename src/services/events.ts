@@ -11,7 +11,7 @@ export const getEventsService = () => {
           throw new Error(`Failed to fetch events: ${res.statusText}`);
         }
         const json = await res.json();
-        return { data: json.events || [], error: null };
+        return { data: json.data ?? json.events ?? [], error: null };
       } catch (err: any) {
         return { data: null, error: err };
       }
@@ -26,10 +26,10 @@ export const getEventsService = () => {
         });
         if (!res.ok) {
           const errBody = await res.json().catch(() => ({}));
-          throw new Error(errBody.error || `Failed to create event: ${res.statusText}`);
+          throw new Error(errBody.error?.message || `Failed to create event: ${res.statusText}`);
         }
         const json = await res.json();
-        return { data: json.event || null, error: null };
+        return { data: json.data ?? json.event ?? null, error: null };
       } catch (err: any) {
         return { data: null, error: err };
       }
@@ -44,10 +44,10 @@ export const getEventsService = () => {
         });
         if (!res.ok) {
           const errBody = await res.json().catch(() => ({}));
-          throw new Error(errBody.error || `Failed to update event: ${res.statusText}`);
+          throw new Error(errBody.error?.message || `Failed to update event: ${res.statusText}`);
         }
         const json = await res.json();
-        return { data: json.event || null, error: null };
+        return { data: json.data ?? json.event ?? null, error: null };
       } catch (err: any) {
         return { data: null, error: err };
       }
@@ -60,7 +60,7 @@ export const getEventsService = () => {
         });
         if (!res.ok) {
           const errBody = await res.json().catch(() => ({}));
-          throw new Error(errBody.error || `Failed to delete event: ${res.statusText}`);
+          throw new Error(errBody.error?.message || `Failed to delete event: ${res.statusText}`);
         }
         return { error: null };
       } catch (err: any) {

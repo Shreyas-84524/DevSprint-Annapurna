@@ -6,6 +6,7 @@
  * real admin dashboard operational metrics; and hardened CMS asset uploads.
  */
 
+import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { getServiceRoleClient } from '@/lib/supabase-admin';
 import {
   BlogPostDTO,
@@ -28,12 +29,24 @@ export class CmsError extends Error {
   public readonly details?: any;
 
   constructor(message: string, code: string, status: number, details?: any) {
-    super(message);
+    if (status >= 500) console.error(`[CMS ${code}]`, message);
+    super(status >= 500 ? 'The CMS request could not be completed.' : message);
     this.name = 'CmsError';
     this.code = code;
     this.status = status;
     this.details = details;
   }
+}
+
+function getPublicCmsClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !key || url.includes('placeholder-url') || key.includes('placeholder-anon-key')) {
+    throw new CmsError('CMS is temporarily unavailable', 'CMS_NOT_CONFIGURED', 503);
+  }
+  return createSupabaseClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
 }
 
 /**
@@ -70,7 +83,7 @@ export async function assertAdminRole(
 export async function getPublicBlogs(
   customClient?: any
 ): Promise<BlogPostDTO[]> {
-  const supabase = customClient || getServiceRoleClient();
+  const supabase = customClient || getPublicCmsClient();
 
   const { data, error } = await supabase
     .from('blogs')
@@ -104,7 +117,7 @@ export async function getPublicBlogBySlug(
   slug: string,
   customClient?: any
 ): Promise<BlogPostDTO | null> {
-  const supabase = customClient || getServiceRoleClient();
+  const supabase = customClient || getPublicCmsClient();
 
   const { data, error } = await supabase
     .from('blogs')
@@ -315,11 +328,12 @@ export async function deleteBlog(
 // -------------------------------------------------------------
 
 export async function getEvents(customClient?: any): Promise<EventDTO[]> {
-  const supabase = customClient || getServiceRoleClient();
+  const supabase = customClient || getPublicCmsClient();
 
   const { data, error } = await supabase
     .from('events')
-    .select('*')
+    .select('id, title, description, date, location, image_url, created_at')
+    .eq('is_published', true)
     .order('date', { ascending: true });
 
   if (error) {
@@ -364,6 +378,7 @@ export async function createEvent(
     location: input.location.trim(),
     date: new Date(input.date).toISOString(),
     image_url: input.imageUrl || null,
+    is_published: true,
   };
 
   const { data, error } = await supabase
@@ -447,11 +462,12 @@ export async function getFaqs(
   category?: string,
   customClient?: any
 ): Promise<FaqDTO[]> {
-  const supabase = customClient || getServiceRoleClient();
+  const supabase = customClient || getPublicCmsClient();
 
   let query = supabase
     .from('faqs')
-    .select('*')
+    .select('id, question, answer, category, display_order, created_at')
+    .eq('is_published', true)
     .order('display_order', { ascending: true })
     .order('created_at', { ascending: false });
 
@@ -494,6 +510,7 @@ export async function createFaq(
     answer: input.answer.trim(),
     category: input.category || 'General',
     display_order: input.displayOrder || 0,
+    is_published: true,
   };
 
   const { data, error } = await supabase
@@ -571,11 +588,12 @@ export async function deleteFaq(
 // -------------------------------------------------------------
 
 export async function getGallery(customClient?: any): Promise<GalleryItemDTO[]> {
-  const supabase = customClient || getServiceRoleClient();
+  const supabase = customClient || getPublicCmsClient();
 
   const { data, error } = await supabase
     .from('gallery')
-    .select('*')
+    .select('id, title, image_url, created_at')
+    .eq('is_published', true)
     .order('created_at', { ascending: false });
 
   if (error) {
@@ -608,6 +626,7 @@ export async function addGalleryItem(
   const payload = {
     title: input.title.trim(),
     image_url: input.imageUrl.trim(),
+    is_published: true,
   };
 
   const { data, error } = await supabase
@@ -697,6 +716,22 @@ function unMsgCountSafe(res: any): number {
 const ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
 
+function hasExpectedImageSignature(buffer: Buffer, mimeType: string): boolean {
+  if (mimeType === 'image/jpeg') {
+    return buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff;
+  }
+  if (mimeType === 'image/png') {
+    const png = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+    return buffer.length >= png.length && png.every((byte, index) => buffer[index] === byte);
+  }
+  if (mimeType === 'image/webp') {
+    return buffer.length >= 12
+      && buffer.subarray(0, 4).toString('ascii') === 'RIFF'
+      && buffer.subarray(8, 12).toString('ascii') === 'WEBP';
+  }
+  return false;
+}
+
 export async function uploadCmsAsset(
   adminId: string,
   file: {
@@ -727,6 +762,18 @@ export async function uploadCmsAsset(
     throw new CmsError(
       `File size (${(file.size / 1024 / 1024).toFixed(2)} MB) exceeds 5 MB limit`,
       'FILE_TOO_LARGE',
+      400
+    );
+  }
+
+  if (file.size <= 0 || file.buffer.byteLength !== file.size) {
+    throw new CmsError('Uploaded file is empty or incomplete', 'INVALID_FILE', 400);
+  }
+
+  if (!hasExpectedImageSignature(file.buffer, file.mimeType.toLowerCase())) {
+    throw new CmsError(
+      'File contents do not match the declared image type',
+      'INVALID_FILE_SIGNATURE',
       400
     );
   }

@@ -18,11 +18,36 @@ export class NotificationError extends Error {
   public readonly status: number;
 
   constructor(message: string, code: string, status: number) {
-    super(message);
+    if (status >= 500) console.error(`[NOTIFICATION ${code}]`, message);
+    super(status >= 500 ? 'The notification request could not be completed.' : message);
     this.name = 'NotificationError';
     this.code = code;
     this.status = status;
   }
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, item]) => `${JSON.stringify(key)}:${stableJson(item)}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function isSafeNotificationLink(link: string | null | undefined): boolean {
+  return !link || /^\/[A-Za-z0-9/_?=&.%#-]*$/.test(link);
+}
+
+function isExactNotificationRetry(row: any, input: CreateNotificationInput): boolean {
+  return row.user_id === input.userId
+    && row.title === input.title.trim()
+    && row.message === input.message.trim()
+    && row.type === (input.type || 'info')
+    && (row.link || null) === (input.link || null)
+    && stableJson(row.metadata || {}) === stableJson(input.metadata || {});
 }
 
 /**
@@ -203,6 +228,13 @@ export async function createWorkflowNotification(
   if (!input.message || input.message.trim().length === 0) {
     throw new NotificationError('message is required', 'INVALID_NOTIFICATION_INPUT', 400);
   }
+  if (!isSafeNotificationLink(input.link)) {
+    throw new NotificationError(
+      'notification link must be an application-relative path',
+      'INVALID_NOTIFICATION_LINK',
+      400
+    );
+  }
 
   // Idempotency check: if key already exists, return existing row
   if (input.idempotencyKey) {
@@ -213,6 +245,13 @@ export async function createWorkflowNotification(
       .maybeSingle();
 
     if (existing) {
+      if (!isExactNotificationRetry(existing, input)) {
+        throw new NotificationError(
+          'idempotency key was reused for a different notification',
+          'IDEMPOTENCY_KEY_REUSED',
+          409
+        );
+      }
       return {
         id: existing.id,
         userId: existing.user_id,
@@ -255,6 +294,13 @@ export async function createWorkflowNotification(
         .maybeSingle();
 
       if (existing) {
+        if (!isExactNotificationRetry(existing, input)) {
+          throw new NotificationError(
+            'idempotency key was reused for a different notification',
+            'IDEMPOTENCY_KEY_REUSED',
+            409
+          );
+        }
         return {
           id: existing.id,
           userId: existing.user_id,

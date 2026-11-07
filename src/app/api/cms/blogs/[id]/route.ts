@@ -13,8 +13,8 @@ export async function GET(
       return NextResponse.json({ data: null, error: { code: 'NOT_FOUND', message: 'Blog post not found' } }, { status: 404 });
     }
     return NextResponse.json({ data: blog, error: null }, { status: 200 });
-  } catch (err: any) {
-    return NextResponse.json({ data: null, error: { code: 'INTERNAL_ERROR', message: err.message } }, { status: 500 });
+  } catch {
+    return NextResponse.json({ data: null, error: { code: 'INTERNAL_ERROR', message: 'The CMS request could not be completed.' } }, { status: 500 });
   }
 }
 
@@ -43,7 +43,7 @@ export async function PATCH(
     if (err instanceof CmsError) {
       return NextResponse.json({ data: null, error: { code: err.code, message: err.message } }, { status: err.status });
     }
-    return NextResponse.json({ data: null, error: { code: 'INTERNAL_ERROR', message: err.message } }, { status: 500 });
+    return NextResponse.json({ data: null, error: { code: 'INTERNAL_ERROR', message: 'The CMS request could not be completed.' } }, { status: 500 });
   }
 }
 
@@ -67,6 +67,6 @@ export async function DELETE(
     if (err instanceof CmsError) {
       return NextResponse.json({ data: null, error: { code: err.code, message: err.message } }, { status: err.status });
     }
-    return NextResponse.json({ data: null, error: { code: 'INTERNAL_ERROR', message: err.message } }, { status: 500 });
+    return NextResponse.json({ data: null, error: { code: 'INTERNAL_ERROR', message: 'The CMS request could not be completed.' } }, { status: 500 });
   }
 }

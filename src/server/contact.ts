@@ -8,6 +8,7 @@
 
 import { getServiceRoleClient } from '@/lib/supabase-admin';
 import { ContactSubmissionRequest, ContactMessageDTO } from '@/types/contracts';
+import { createHash } from 'node:crypto';
 
 export class ContactError extends Error {
   public readonly code: string;
@@ -15,7 +16,8 @@ export class ContactError extends Error {
   public readonly details?: any;
 
   constructor(message: string, code: string, status: number, details?: any) {
-    super(message);
+    if (status >= 500) console.error(`[CONTACT ${code}]`, message);
+    super(status >= 500 ? 'The contact request could not be completed.' : message);
     this.name = 'ContactError';
     this.code = code;
     this.status = status;
@@ -141,40 +143,82 @@ export async function submitContactMessage(
 
   const normalized = validateAndNormalizeContactInput(input);
 
-  // Rate limit by IP if provided, or by email
-  const rateLimitKey = clientIp ? `ip:${clientIp}` : `email:${normalized.email}`;
-  checkRateLimit(rateLimitKey);
+  // Injected clients are used only by isolated unit tests. Production uses the
+  // database RPC below so throttling survives stateless Vercel instances.
+  if (customClient) {
+    const testRateLimitKey = clientIp ? `ip:${clientIp}` : `email:${normalized.email}`;
+    checkRateLimit(testRateLimitKey);
 
-  const payload = {
-    name: normalized.name,
-    email: normalized.email,
-    phone: normalized.phone,
-    message: normalized.message,
-    status: 'unread',
-  };
+    const { data, error } = await supabase
+      .from('contact_messages')
+      .insert({
+        name: normalized.name,
+        email: normalized.email,
+        phone: normalized.phone,
+        message: normalized.message,
+        status: 'unread',
+      })
+      .select()
+      .single();
+
+    if (error) {
+      throw new ContactError('Failed to submit contact message', 'CONTACT_SUBMISSION_FAILED', 500);
+    }
+
+    return {
+      id: data.id,
+      name: data.name,
+      email: data.email,
+      phone: data.phone,
+      message: data.message,
+      status: data.status,
+      createdAt: data.created_at,
+    };
+  }
+
+  const rateLimitIdentity = clientIp
+    ? `ip:${clientIp}`
+    : `email:${normalized.email}`;
+  const rateLimitKey = createHash('sha256').update(rateLimitIdentity).digest('hex');
 
   const { data, error } = await supabase
-    .from('contact_messages')
-    .insert(payload)
-    .select()
-    .single();
+    .rpc('submit_contact_message', {
+      p_name: normalized.name,
+      p_email: normalized.email,
+      p_phone: normalized.phone,
+      p_message: normalized.message,
+      p_rate_key: rateLimitKey,
+    });
 
   if (error) {
+    if (error.message?.includes('CONTACT_RATE_LIMITED')) {
+      throw new ContactError(
+        `Rate limit exceeded. You can submit up to ${MAX_SUBMISSIONS_PER_HOUR} messages per hour.`,
+        'RATE_LIMIT_EXCEEDED',
+        429,
+        { retryAfterSeconds: 3600 }
+      );
+    }
     throw new ContactError(
-      `Failed to submit contact message: ${error.message}`,
+      'Failed to submit contact message',
       'CONTACT_SUBMISSION_FAILED',
       500
     );
   }
 
+  const result = Array.isArray(data) ? data[0] : data;
+  if (!result?.id || !result?.created_at) {
+    throw new ContactError('Failed to submit contact message', 'CONTACT_SUBMISSION_FAILED', 500);
+  }
+
   return {
-    id: data.id,
-    name: data.name,
-    email: data.email,
-    phone: data.phone,
-    message: data.message,
-    status: data.status,
-    createdAt: data.created_at,
+    id: result.id,
+    name: normalized.name,
+    email: normalized.email,
+    phone: normalized.phone,
+    message: normalized.message,
+    status: 'unread',
+    createdAt: result.created_at,
   };
 }
 

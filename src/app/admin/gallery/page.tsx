@@ -89,11 +89,12 @@ export default function AdminGalleryPage() {
 
         if (!uploadRes.ok) {
           const errData = await uploadRes.json().catch(() => ({}));
-          throw new Error(errData.error || "File upload failed.");
+          throw new Error(errData.error?.message || "File upload failed.");
         }
 
         const uploadData = await uploadRes.json();
-        finalImageUrl = uploadData.url;
+        finalImageUrl = uploadData.data?.url;
+        if (!finalImageUrl) throw new Error("The upload response did not include an asset URL.");
       }
 
       const payload = {

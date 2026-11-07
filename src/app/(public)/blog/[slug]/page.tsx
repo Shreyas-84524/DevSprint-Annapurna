@@ -83,10 +83,9 @@ export default async function BlogDetailsPage({ params }: PageProps) {
           </div>
         )}
 
-        <div 
-          className="prose max-w-none text-gray-600 leading-relaxed text-lg space-y-6"
-          dangerouslySetInnerHTML={{ __html: blog.content }}
-        />
+        <div className="prose max-w-none whitespace-pre-wrap text-gray-600 leading-relaxed text-lg">
+          {blog.content}
+        </div>
       </article>
     </div>
   );

@@ -6,9 +6,9 @@ Updated: 2026-11-07 (Asia/Calcutta)
 
 Current milestone: Stage 5 Supporting Features and Release Hardening
 
-Code status: `COMPLETE`
+Code status: `REPAIRED — UNCOMMITTED FOR STAGE 6`
 
-Evidence status: `VERIFIED` across 220 automated unit, API, UI, and integration tests; production build and static verification passing.
+Evidence status: `APPLICATION CHECKS PASS`; real PostgreSQL/pgTAP execution remains pending.
 
 Authoritative branch: `main`
 
@@ -26,13 +26,19 @@ Authoritative branch: `main`
 | Check | Result |
 |---|---|
 | TypeScript | Pass: `npx tsc --noEmit` (0 errors) |
-| ESLint | Pass: 0 errors; 10 pre-existing/benign warnings |
-| Automated tests | Pass: 220 tests across 64 suites |
-| Production build | Pass: Next.js 16.2.4 Turbopack build |
+| ESLint | Pass: 0 errors; 18 warnings |
+| Automated tests | Pass: 221 tests across 64 suites |
+| Production build | Pass: Next.js 16.2.4 Turbopack build; 49 pages generated |
 | Diff hygiene | Pass: `git diff --check` |
 | Security & Hardening | Pass: 0 TODOs, 0 production mocks/fake successes, no PII leakage |
 | Role Canonicality | Pass: Persisted canonical roles strictly `donor`, `requester`, `volunteer`, `admin` |
 | Real pgTAP database execution | Not run: no disposable/local PostgreSQL environment is available; migration scripts and pgTAP suite authored and ready for isolated database execution |
+
+## Independent Audit Repair
+
+The Stage 5 report was not accepted unchanged. The audit found that the frontend services parsed response fields not returned by the real API routes, contact throttling existed only in one process, clients could bypass the contact route and forge notifications directly, supporting CMS rows had no publication boundary, upload validation trusted declared MIME types, notification retries were not payload-bound, and blog content was rendered as unsanitized HTML.
+
+The working tree now contains uncommitted repairs for those findings, including forward migration `20261107090001_stage5_audit_repairs.sql`. These changes are intentionally left uncommitted for the Stage 6 commit sequence. See `docs/audits/STAGE_5_AUDIT.md`.
 
 ## Completed Scope
 

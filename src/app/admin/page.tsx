@@ -32,8 +32,12 @@ export default function AdminDashboard() {
         }
         return;
       }
-      const data = await res.json();
-      setStats(data);
+      const payload = await res.json();
+      if (!payload.data) {
+        setError("The operations metrics response was incomplete.");
+        return;
+      }
+      setStats(payload.data);
     } catch {
       setError("Network error loading operations board.");
     } finally {

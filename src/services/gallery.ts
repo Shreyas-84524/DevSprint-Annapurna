@@ -11,7 +11,7 @@ export const getGalleryService = () => {
           throw new Error(`Failed to fetch gallery items: ${res.statusText}`);
         }
         const json = await res.json();
-        return { data: json.items || [], error: null };
+        return { data: json.data ?? json.items ?? [], error: null };
       } catch (err: any) {
         return { data: null, error: err };
       }
@@ -26,10 +26,10 @@ export const getGalleryService = () => {
         });
         if (!res.ok) {
           const errBody = await res.json().catch(() => ({}));
-          throw new Error(errBody.error || `Failed to add gallery item: ${res.statusText}`);
+          throw new Error(errBody.error?.message || `Failed to add gallery item: ${res.statusText}`);
         }
         const json = await res.json();
-        return { data: json.item || null, error: null };
+        return { data: json.data ?? json.item ?? null, error: null };
       } catch (err: any) {
         return { data: null, error: err };
       }
@@ -42,7 +42,7 @@ export const getGalleryService = () => {
         });
         if (!res.ok) {
           const errBody = await res.json().catch(() => ({}));
-          throw new Error(errBody.error || `Failed to delete gallery item: ${res.statusText}`);
+          throw new Error(errBody.error?.message || `Failed to delete gallery item: ${res.statusText}`);
         }
         return { error: null };
       } catch (err: any) {

@@ -32,7 +32,7 @@ describe("Supporting Features UI & Service Integration Suite", () => {
         assert.ok(url.includes("/api/cms/blogs?status=published"));
         return new Response(
           JSON.stringify({
-            blogs: [
+            data: [
               {
                 id: "b-1",
                 title: "Over 500 Meals Rescued in Bandra",
@@ -62,7 +62,7 @@ describe("Supporting Features UI & Service Integration Suite", () => {
         assert.ok(url.includes("slug=test-slug"));
         return new Response(
           JSON.stringify({
-            blogs: [
+            data: [
               {
                 id: "b-2",
                 title: "Test Blog Article",
@@ -93,7 +93,7 @@ describe("Supporting Features UI & Service Integration Suite", () => {
         assert.equal(body.title, "New Community Drive");
         return new Response(
           JSON.stringify({
-            blog: {
+            data: {
               id: "b-new",
               title: body.title,
               slug: "new-community-drive",
@@ -126,7 +126,7 @@ describe("Supporting Features UI & Service Integration Suite", () => {
         assert.ok(url.includes("/api/cms/events"));
         return new Response(
           JSON.stringify({
-            events: [
+            data: [
               {
                 id: "ev-1",
                 title: "Weekend Food Relief Drive",
@@ -157,7 +157,7 @@ describe("Supporting Features UI & Service Integration Suite", () => {
         const body = JSON.parse(String(init?.body));
         return new Response(
           JSON.stringify({
-            event: {
+            data: {
               id: "ev-2",
               ...body,
               createdAt: new Date().toISOString(),
@@ -187,7 +187,7 @@ describe("Supporting Features UI & Service Integration Suite", () => {
         assert.ok(url.includes("/api/cms/faqs"));
         return new Response(
           JSON.stringify({
-            faqs: [
+            data: [
               {
                 id: "faq-1",
                 question: "How do volunteers conduct QC?",
@@ -216,7 +216,7 @@ describe("Supporting Features UI & Service Integration Suite", () => {
         const body = JSON.parse(String(init?.body));
         return new Response(
           JSON.stringify({
-            faq: {
+            data: {
               id: "faq-2",
               ...body,
               createdAt: new Date().toISOString(),
@@ -245,7 +245,7 @@ describe("Supporting Features UI & Service Integration Suite", () => {
         assert.ok(url.includes("/api/cms/gallery"));
         return new Response(
           JSON.stringify({
-            items: [
+            data: [
               {
                 id: "g-1",
                 title: "Food Distribution at Shelter",
@@ -273,7 +273,7 @@ describe("Supporting Features UI & Service Integration Suite", () => {
         const body = JSON.parse(String(init?.body));
         return new Response(
           JSON.stringify({
-            item: {
+            data: {
               id: "g-2",
               title: body.title,
               imageUrl: body.imageUrl,
@@ -306,8 +306,8 @@ describe("Supporting Features UI & Service Integration Suite", () => {
         assert.equal(body.email, "rohan@example.com");
         return new Response(
           JSON.stringify({
-            success: true,
-            messageId: "msg-1",
+            data: { success: true, messageId: "msg-1" },
+            error: null,
           }),
           { status: 201, headers: { "Content-Type": "application/json" } }
         );
@@ -330,8 +330,11 @@ describe("Supporting Features UI & Service Integration Suite", () => {
       mockFetchHandler = async () => {
         return new Response(
           JSON.stringify({
-            error: "Too many messages sent. Please wait before trying again.",
-            code: "RATE_LIMITED",
+            data: null,
+            error: {
+              message: "Too many messages sent. Please wait before trying again.",
+              code: "RATE_LIMITED",
+            },
           }),
           { status: 429, headers: { "Content-Type": "application/json" } }
         );
@@ -355,7 +358,7 @@ describe("Supporting Features UI & Service Integration Suite", () => {
         assert.ok(url.includes("/api/cms/messages"));
         return new Response(
           JSON.stringify({
-            messages: [
+            data: [
               {
                 id: "msg-101",
                 name: "Aarti Verma",
@@ -387,7 +390,7 @@ describe("Supporting Features UI & Service Integration Suite", () => {
         assert.ok(url.includes("/api/notifications"));
         return new Response(
           JSON.stringify({
-            notifications: [
+            data: { notifications: [
               {
                 id: "notif-1",
                 userId: "user-1",
@@ -408,7 +411,7 @@ describe("Supporting Features UI & Service Integration Suite", () => {
                 read: true,
                 createdAt: new Date(Date.now() - 3600000).toISOString(),
               },
-            ],
+            ], unreadCount: 1 },
           }),
           { status: 200, headers: { "Content-Type": "application/json" } }
         );
@@ -446,7 +449,7 @@ describe("Supporting Features UI & Service Integration Suite", () => {
         assert.equal(init?.method, "POST");
         return new Response(
           JSON.stringify({
-            notification: {
+            data: {
               id: "notif-1",
               userId: "user-1",
               title: "Listing Claimed",

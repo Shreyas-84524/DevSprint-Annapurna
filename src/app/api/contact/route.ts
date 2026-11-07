@@ -1,5 +1,8 @@
 import { NextResponse } from 'next/server';
 import { submitContactMessage, ContactError } from '@/server/contact';
+import { isIP } from 'node:net';
+
+export const runtime = 'nodejs';
 
 export async function POST(
   req: Request,
@@ -22,7 +25,8 @@ export async function POST(
 
     // Extract client IP from forwarding headers for rate limiting
     const forwarded = req.headers.get('x-forwarded-for');
-    const clientIp = forwarded ? forwarded.split(',')[0].trim() : req.headers.get('x-real-ip') || undefined;
+    const candidateIp = (forwarded ? forwarded.split(',')[0] : req.headers.get('x-real-ip'))?.trim();
+    const clientIp = candidateIp && isIP(candidateIp) !== 0 ? candidateIp : undefined;
 
     const result = await submitContactMessage(body, clientIp, context?.customClient);
 

@@ -74,6 +74,7 @@ export type Database = {
           date: string
           location: string
           image_url: string | null
+          is_published: boolean
           created_at: string
           updated_at: string
         }
@@ -84,6 +85,7 @@ export type Database = {
           date: string
           location: string
           image_url?: string | null
+          is_published?: boolean
           created_at?: string
           updated_at?: string
         }
@@ -94,6 +96,7 @@ export type Database = {
           date?: string
           location?: string
           image_url?: string | null
+          is_published?: boolean
           created_at?: string
           updated_at?: string
         }
@@ -105,6 +108,7 @@ export type Database = {
           answer: string
           category: string
           display_order: number
+          is_published: boolean
           created_at: string
           updated_at: string
         }
@@ -114,6 +118,7 @@ export type Database = {
           answer: string
           category?: string
           display_order?: number
+          is_published?: boolean
           created_at?: string
           updated_at?: string
         }
@@ -123,6 +128,7 @@ export type Database = {
           answer?: string
           category?: string
           display_order?: number
+          is_published?: boolean
           created_at?: string
           updated_at?: string
         }
@@ -132,18 +138,21 @@ export type Database = {
           id: string
           title: string
           image_url: string
+          is_published: boolean
           created_at: string
         }
         Insert: {
           id?: string
           title: string
           image_url: string
+          is_published?: boolean
           created_at?: string
         }
         Update: {
           id?: string
           title?: string
           image_url?: string
+          is_published?: boolean
           created_at?: string
         }
       }
@@ -857,6 +866,19 @@ export type Database = {
       }
     }
     Functions: {
+      submit_contact_message: {
+        Args: {
+          p_email: string
+          p_message: string
+          p_name: string
+          p_phone: string | null
+          p_rate_key: string
+        }
+        Returns: {
+          created_at: string
+          id: string
+        }[]
+      }
       accept_delivery_task: {
         Args: {
           p_delivery_id: string

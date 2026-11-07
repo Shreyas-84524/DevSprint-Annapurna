@@ -89,7 +89,8 @@ export default function NotificationBell({ className = "" }: NotificationBellPro
       setNotifications((prev) =>
         prev.map((n) => (n.id === id ? { ...n, read: true } : n))
       );
-      await notificationsService.markAsRead(id);
+      const { error } = await notificationsService.markAsRead(id);
+      if (error) throw error;
     } catch {
       // Revert if failed
       fetchNotifications();
@@ -102,13 +103,16 @@ export default function NotificationBell({ className = "" }: NotificationBellPro
 
     // Optimistic
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    let failed = false;
     for (const notif of unread) {
       try {
-        await notificationsService.markAsRead(notif.id);
+        const { error } = await notificationsService.markAsRead(notif.id);
+        if (error) throw error;
       } catch {
-        // Continue marking others
+        failed = true;
       }
     }
+    if (failed) await fetchNotifications();
   };
 
   const unreadCount = notifications.filter((n) => !n.read).length;
@@ -220,8 +224,9 @@ export default function NotificationBell({ className = "" }: NotificationBellPro
               </div>
             ) : (
               notifications.map((notif) => {
-                const linkHref = notif.link || "#";
-                const isExternal = linkHref.startsWith("http");
+                const linkHref = notif.link && /^\/[A-Za-z0-9/_?=&.%#-]*$/.test(notif.link)
+                  ? notif.link
+                  : null;
 
                 return (
                   <div
@@ -265,11 +270,9 @@ export default function NotificationBell({ className = "" }: NotificationBellPro
                                 minute: "2-digit",
                               })}
                             </span>
-                            {notif.link && (
+                            {linkHref && (
                               <Link
                                 href={linkHref}
-                                target={isExternal ? "_blank" : undefined}
-                                rel={isExternal ? "noopener noreferrer" : undefined}
                                 onClick={() => {
                                   if (!notif.read) {
                                     handleMarkAsRead(notif.id);
