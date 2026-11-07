@@ -1,47 +1,129 @@
-# Vercel Deployment Plan
-
-Status: planning only; no deployment performed
+# Vercel Deployment & Release Guide
 
 ## Principles
 
-- Deploy Preview before Production.
-- Run migrations deliberately through an authenticated release step; never from every build.
-- Vercel functions are stateless. Do not depend on local persistent files, long-lived memory, or a custom persistent WebSocket server.
-- Supabase Realtime supplies authorized updates.
-- Keep secret/service credentials server-side. Browser variables are limited to intentionally publishable values.
+1. **Deploy Preview before Production**: All changes must be verified in an ephemeral or branch Preview deployment before any Production promotion.
+2. **Stateless Functions**: Vercel Serverless Functions are stateless. The application does not depend on local persistent filesystem files, long-lived in-memory caches across invocations, or a custom persistent WebSocket server.
+3. **Database-Backed State**: Throttling, notifications, listings, deliveries, and tracking reside in Supabase PostgreSQL.
+4. **Supabase Realtime**: Live delivery updates are powered by Supabase Realtime WebSocket connections directly from the browser client, not long-polling or custom socket daemons on Vercel.
+5. **Least Privilege Secrets**: Server-only secrets (`SUPABASE_SERVICE_ROLE_KEY`, `ADMIN_BOOTSTRAP_SECRET`, `SWIFT_PROJECT_KEY`, `GEOAPIFY_API_KEY`) must never be prefixed with `NEXT_PUBLIC_` or bundled in browser code.
+6. **Deliberate Migrations**: Database migrations are an explicit, authenticated release action. Migrations are NEVER run automatically as part of the Vercel build command (`next build`).
 
-## Planned environment names
+---
 
-Final names are backend-owned and must be verified in Stage 6. Expected categories are:
+## Environment Variables Specification
 
-- Publishable Supabase URL and publishable key for browser/server clients.
-- Server-only Supabase secret/service key only where a narrowly scoped privileged operation truly requires it.
-- `SWIFT_BASE_URL` and server-only `SWIFT_PROJECT_KEY` for SMS verification.
-- Server-only `ORS_API_KEY` through the routing adapter.
-- Application base URL and allowed redirect origins.
+The application requires the following environment variables. Values must never be committed to git.
 
-Do not commit values. Preview and Production values/scopes are recorded separately.
+| Variable Name | Scope | Environments | Purpose & Validation Rules |
+|---|---|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Public (Browser & Server) | Preview, Production | Supabase project URL (`https://<project-ref>.supabase.co`). |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Public (Browser & Server) | Preview, Production | Supabase anonymous public key for client-side Auth and RLS-scoped data access. |
+| `SUPABASE_SERVICE_ROLE_KEY` | Server-Only Secret | Preview, Production | Privileged key for `internal.is_admin()` checks, admin bootstrap, and `submit_contact_message` RPC. Never expose to client! |
+| `NEXT_PUBLIC_APP_URL` | Public (Browser & Server) | Preview, Production | Base canonical URL of the application. Preview: `https://<deployment>.vercel.app`; Production: `https://annapurna.org`. |
+| `ADMIN_BOOTSTRAP_SECRET` | Server-Only Secret | Preview, Production | Secret token for `/api/admin/bootstrap`. Minimum 16 characters. |
+| `SWIFT_BASE_URL` | Server-Only | Preview, Production | Swift SMS service URL (`https://global-otp-service.vercel.app`). |
+| `SWIFT_PROJECT_KEY` | Server-Only Secret | Preview, Production | Upstream Swift SMS project API key for donor/requester mobile verification. |
+| `GEOAPIFY_API_KEY` | Server-Only Secret | Preview, Production | API key for server-side routing polyline generation (`/api/routing`). |
+| `NEXT_PUBLIC_GEOAPIFY_MAP_KEY` | Public (Browser) | Preview, Production | Optional Geoapify tile style key. Falls back cleanly to OpenStreetMap standard tiles if unset. |
+| `GOOGLE_SHEETS_WEBHOOK_URL` | Server-Only Secret | Preview, Production | Optional webhook for external reporting sync (`/api/sync`). |
 
-## Release sequence
+---
 
-1. Record commit, branch, migration list/hash, and rollback point.
-2. Apply and verify migrations against the intended Preview backend.
-3. Configure Preview environment names and Supabase Auth redirects/storage/Realtime.
-4. Deploy Preview and run automated/integration checks.
-5. Run the user manual checklist on intended browsers/devices.
-6. Record failures and route corrections through the owner/audit loop.
-7. Promote only after readiness review; production remains a separate decision.
+## Supabase Service Configuration
 
-## Required release record
+### 1. Authentication & Redirect URLs
+In Supabase Dashboard > Authentication > URL Configuration:
+- **Site URL**:
+  - Preview: `https://<project-name>-preview.vercel.app` (or specific preview domain)
+  - Production: `https://annapurna.org`
+- **Redirect URLs (Allow list)**:
+  - `http://localhost:3000/**` (local development)
+  - `https://*.vercel.app/**` (all Vercel preview branch deployments)
+  - `https://annapurna.org/**` (production)
+  - `https://www.annapurna.org/**` (production alias)
 
-- Tested commit and repository state.
-- Vercel Preview URL and deployment timestamp.
-- Supabase project reference/region and migration state without secrets.
-- Environment variable names and scopes, not values.
-- Automated commands/results and user manual result separately.
-- Known external/device limitations.
-- Migration recovery and Vercel rollback instructions tested or explicitly unverified.
+### 2. Storage Buckets
+The application requires two Supabase Storage buckets configured:
+1. `cms-assets`:
+   - Public: `true`
+   - File size limit: 5 MB (application enforces <= 4.5 MB to respect Vercel function payload limits)
+   - Allowed MIME types: `image/jpeg`, `image/png`, `image/webp`
+   - Access: Read is public via object URL. Direct bucket enumeration via `storage.objects` is revoked; mutations are restricted to authenticated admins.
+2. `listing-images`:
+   - Public: `true`
+   - File size limit: 5 MB
+   - Allowed MIME types: `image/jpeg`, `image/png`, `image/webp`
+   - Access: Public read, authenticated donor insert.
 
-## Stage 6 research gate
+### 3. Realtime Publication
+In Supabase Dashboard > Database > Publications:
+- Ensure the `supabase_realtime` publication includes the `deliveries` table so status transitions and tracking updates trigger browser subscribers.
 
-Before configuration, Codex re-checks current official Next.js, Vercel, Supabase, OpenRouteService/HeiGIT, and basemap documentation and free-plan limits. No paid resource is selected silently.
+---
+
+## Migration Release Procedure
+
+Migrations must be run deliberately prior to or in conjunction with application deployments.
+
+### Complete Migration Chain in Order:
+1. `supabase/migrations/20261101000000_core_schema.sql`
+2. `supabase/migrations/20261102000000_profiles_and_roles.sql`
+3. `supabase/migrations/20261103000000_listings_and_claims.sql`
+4. `supabase/migrations/20261104000000_deliveries_and_tracking.sql`
+5. `supabase/migrations/20261107090000_secure_cms_contact_notifications.sql`
+6. `supabase/migrations/20261107090001_stage5_audit_repairs.sql`
+
+### Safe Migration Execution Command:
+```bash
+# Verify pending migrations against linked Supabase project
+npx supabase migration list
+
+# Apply pending migrations forward-only
+npx supabase db push
+```
+
+### Rollback & Forward Recovery Limitations:
+- **Never attempt destructive automated rollbacks (`db reset`) on staging or production data.**
+- In PostgreSQL, rolling back schema drops tables and columns, permanently deleting user data.
+- If a migration defect occurs, author an emergency **forward corrective migration** (`20261107xxxxxx_fix_description.sql`) that alters the tables or policies safely without data loss.
+
+---
+
+## Vercel Deployment & Rollback Protocol
+
+### Preview Deployment:
+1. Push git branch or trigger Vercel CLI:
+   ```bash
+   vercel --preview
+   ```
+2. Verify build log:
+   - Ensure Next.js 16 App Router builds 49/49 pages cleanly.
+   - Verify environment variables are resolved for the Preview environment.
+
+### Instant Rollback on Vercel:
+1. Open Vercel Dashboard > Project > Deployments.
+2. Select the last known healthy deployment.
+3. Click the `...` menu > **Instant Rollback** (or **Promote to Production** if reverting a production release).
+4. Traffic is redirected immediately at the edge without a rebuild.
+
+---
+
+## Free-Tier Constraints & Operational Limits
+
+The application operates within the following free-tier limits:
+
+1. **Vercel Hobby**:
+   - Serverless function timeout: max 300 seconds (default 15s; adequate for API route handlers).
+   - Serverless request/response payload: **4.5 MB** maximum. The application enforces pre-flight image checks to reject payloads > 4.5 MB before transmission.
+   - Monthly bandwidth: 100 GB.
+2. **Supabase Free Tier**:
+   - Database storage: 500 MB.
+   - File storage: 1 GB.
+   - Realtime messages: 2M / month; 200 peak concurrent connections.
+   - Inactivity pause: projects pause after 7 days of inactivity (unpause manually in dashboard).
+3. **OpenRouteService Free Tier**:
+   - Rate limit: 40 requests/minute, 2,000 requests/day for directions.
+   - Application implements in-memory route caching to prevent redundant requests on common routes.
+4. **OpenStreetMap Tiles**:
+   - Public tile servers require standard caching headers and low concurrency (< 2 simultaneous threads).

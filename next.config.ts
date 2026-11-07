@@ -19,7 +19,7 @@ const securityHeaders = [
   },
   {
     key: 'Permissions-Policy',
-    value: 'camera=(), microphone=(), geolocation=(), browsing-topics=()'
+    value: 'camera=(), microphone=(), geolocation=(self), browsing-topics=()'
   },
   {
     key: 'X-Content-Type-Options',
@@ -32,13 +32,26 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
+  images: {
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: '**.supabase.co',
+        pathname: '/storage/v1/object/public/**',
+      },
+      {
+        protocol: 'https',
+        hostname: 'images.unsplash.com',
+      },
+    ],
+  },
   async headers() {
     return [
       {
         source: '/(.*)',
         headers: securityHeaders,
       },
-    ]
+    ];
   },
 };
 
