@@ -73,6 +73,16 @@ Migrations must be run deliberately prior to or in conjunction with application 
 4. `supabase/migrations/20261104000000_deliveries_and_tracking.sql`
 5. `supabase/migrations/20261107090000_secure_cms_contact_notifications.sql`
 6. `supabase/migrations/20261107090001_stage5_audit_repairs.sql`
+7. `supabase/migrations/20261107090002_fix_blog_admin_policies_role.sql`
+
+### Production Database Target:
+- Project Reference: `xtbabyqkgirjiratjcap`
+- Region: `eu-west-1`
+- Status: `ACTIVE_HEALTHY`
+- Applied Migrations: 7/7 applied forward-only
+- Database Health & Security: 0 security errors, 0 health errors via Supabase Advisors
+- Database Acceptance Test: 36/36 assertions passed via pgTAP on remote PostgreSQL
+- Supabase Realtime: `public.deliveries` added to `supabase_realtime` publication
 
 ### Safe Migration Execution Command:
 ```bash
@@ -80,7 +90,7 @@ Migrations must be run deliberately prior to or in conjunction with application 
 npx supabase migration list
 
 # Apply pending migrations forward-only
-npx supabase db push
+npx supabase db push --remote --include-all --yes
 ```
 
 ### Rollback & Forward Recovery Limitations:
@@ -92,6 +102,13 @@ npx supabase db push
 
 ## Vercel Deployment & Rollback Protocol
 
+### Production & Preview Targets:
+- **Vercel Team / Scope**: `shreyas-84524`
+- **Vercel Project**: `annapurna` (`prj_O1Z7fYVBhKIk4xMcWfo5KEXtooRo`)
+- **Preview Deployment**: `https://annapurna-f8i9s645j-shreyas-projects-0284524c.vercel.app` (`dpl_6Zp1tUrA3bisoQNC3HrkEZGYMQ9P`)
+- **Production Deployment**: `https://annapurna-steel.vercel.app` (`dpl_tZZHNKBZu9qwkcn5GJuhphnBNG7T`)
+- **Live Smoke Verification**: 16/16 route and API smoke tests passing
+
 ### Preview Deployment:
 1. Push git branch or trigger Vercel CLI:
    ```bash
@@ -101,11 +118,19 @@ npx supabase db push
    - Ensure Next.js 16 App Router builds 49/49 pages cleanly.
    - Verify environment variables are resolved for the Preview environment.
 
+### Production Promotion:
+```bash
+vercel deploy --prod --yes
+```
+
 ### Instant Rollback on Vercel:
 1. Open Vercel Dashboard > Project > Deployments.
-2. Select the last known healthy deployment.
+2. Select the last known healthy deployment (e.g. previous deployment ID).
 3. Click the `...` menu > **Instant Rollback** (or **Promote to Production** if reverting a production release).
-4. Traffic is redirected immediately at the edge without a rebuild.
+4. Traffic is redirected immediately at the edge without a rebuild. Alternatively, execute via CLI:
+   ```bash
+   vercel rollback <deployment-id> --yes
+   ```
 
 ---
 

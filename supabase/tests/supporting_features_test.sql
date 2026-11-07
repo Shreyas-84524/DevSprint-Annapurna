@@ -1,7 +1,7 @@
 BEGIN;
 CREATE EXTENSION IF NOT EXISTS pgtap WITH SCHEMA extensions;
 SET LOCAL search_path = public, extensions;
-SELECT plan(33);
+SELECT plan(36);
 
 -- 1. Table existence
 SELECT has_table('public', 'events', 'events table exists');
