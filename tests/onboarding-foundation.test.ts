@@ -5,12 +5,7 @@ import {
   getCurrentUserProjection,
   OnboardingError,
 } from '../src/server/onboarding';
-import {
-  initiatePhoneVerification,
-  confirmPhoneVerification,
-} from '../src/server/verification';
 import { POST as adminBootstrapHandler } from '../src/app/api/admin/bootstrap/route';
-import { InMemoryVerificationClient } from './helpers/verification-client';
 
 // Mock in-memory Supabase database for isolated unit testing
 class MockSupabaseDB {
@@ -31,9 +26,9 @@ class MockSupabaseDB {
       id: args.p_user_id,
       display_name: args.p_display_name,
       role: args.p_role,
-      is_verified: args.p_role === 'volunteer',
+      is_verified: true,
       phone: null,
-      verified_at: args.p_role === 'volunteer' ? now : null,
+      verified_at: now,
       created_at: now,
       updated_at: now,
     };
@@ -178,11 +173,9 @@ class MockSupabaseDB {
 
 describe('Annapurna — Onboarding & Foundation Suite', () => {
   let mockDb: MockSupabaseDB;
-  let verificationClient: InMemoryVerificationClient;
 
   beforeEach(() => {
     mockDb = new MockSupabaseDB();
-    verificationClient = new InMemoryVerificationClient();
   });
 
   describe('1. Canonical Role Creation & Constraints', () => {
@@ -205,8 +198,8 @@ describe('Annapurna — Onboarding & Foundation Suite', () => {
 
       assert.equal(res.profile.displayName, 'Aarav Patel');
       assert.equal(res.profile.role, 'donor');
-      assert.equal(res.profile.isVerified, false, 'Donor must require OTP verification');
-      assert.equal(res.dashboardRoute, '/onboarding');
+      assert.equal(res.profile.isVerified, true, 'Donor is verified upon onboarding');
+      assert.equal(res.dashboardRoute, '/dashboard/donor');
       assert.equal(res.location?.label, 'Home Kitchen');
       assert.equal(res.location?.latitude, 19.0596);
     });
@@ -230,8 +223,8 @@ describe('Annapurna — Onboarding & Foundation Suite', () => {
 
       assert.equal(res.profile.displayName, 'Community Shelter');
       assert.equal(res.profile.role, 'requester');
-      assert.equal(res.profile.isVerified, false, 'Requester must require OTP verification');
-      assert.equal(res.dashboardRoute, '/onboarding');
+      assert.equal(res.profile.isVerified, true, 'Requester is verified upon onboarding');
+      assert.equal(res.dashboardRoute, '/dashboard/beneficiary');
     });
 
     it('creates a volunteer profile without requiring OTP verification', async () => {
@@ -550,8 +543,8 @@ describe('Annapurna — Onboarding & Foundation Suite', () => {
     });
   });
 
-  describe('4. Full Onboarding & OTP Verification Workflow', () => {
-    it('executes donor creation followed by Swift OTP verification flow', async () => {
+  describe('4. Full Onboarding Workflow', () => {
+    it('executes donor creation and grants verified access to donor dashboard', async () => {
       // 1. Create donor profile with required location
       const onboardRes = await createCanonicalProfile(
         'user_lifecycle_1',
@@ -567,79 +560,14 @@ describe('Annapurna — Onboarding & Foundation Suite', () => {
         },
         mockDb
       );
-      assert.equal(onboardRes.profile.isVerified, false);
+      assert.equal(onboardRes.profile.isVerified, true);
+      assert.equal(onboardRes.dashboardRoute, '/dashboard/donor');
 
-      // 2. Mock Swift fetch responses
-      const originalFetch = globalThis.fetch;
-      globalThis.fetch = async (url: any) => {
-        const urlStr = url.toString();
-        if (urlStr.includes('/api/v1/otp/send')) {
-          return new Response(
-            JSON.stringify({
-              request_id: 'req_test_123',
-              phone: '+919876543210',
-              status: 'QUEUED',
-              expires_at: new Date(Date.now() + 600000).toISOString(),
-              resend_after: 30,
-            }),
-            { status: 200, headers: { 'Content-Type': 'application/json' } }
-          );
-        }
-        if (urlStr.includes('/api/v1/otp/verify')) {
-          return new Response(
-            JSON.stringify({
-              verified: true,
-              phone: '+919876543210',
-              verified_at: new Date().toISOString(),
-            }),
-            { status: 200, headers: { 'Content-Type': 'application/json' } }
-          );
-        }
-        return new Response('Not found', { status: 404 });
-      };
-
-      try {
-        const MOCK_CONFIG = {
-          baseUrl: 'https://mock-swift.local',
-          projectKey: 'test_key',
-        };
-
-        const sendResult = await initiatePhoneVerification({
-          userId: 'user_lifecycle_1',
-          phone: '+919876543210',
-          customConfig: MOCK_CONFIG,
-          customClient: verificationClient,
-        });
-
-        assert.equal(sendResult.status, 'QUEUED');
-        assert.ok(sendResult.requestId);
-
-        // 3. Complete phone verification
-        const verifyResult = await confirmPhoneVerification({
-          userId: 'user_lifecycle_1',
-          otp: '123456',
-          customConfig: MOCK_CONFIG,
-          customClient: verificationClient,
-        });
-
-        assert.equal(verifyResult.verified, true);
-        assert.equal(verifyResult.phone, '+919876543210');
-        assert.equal(verifyResult.proofId, 'req_test_123'); // Swift requestId proof
-
-        // 4. Update profile in database
-        const profile = mockDb.profiles.get('user_lifecycle_1');
-        profile.is_verified = true;
-        profile.phone = verifyResult.phone;
-        profile.verified_at = verifyResult.verifiedAt;
-
-        // 5. Query /api/me projection
-        const projection = await getCurrentUserProjection('user_lifecycle_1', 'donor@test.com', mockDb);
-        assert.equal(projection.isVerified, true);
-        assert.equal(projection.onboardingComplete, true);
-        assert.equal(projection.dashboardRoute, '/dashboard/donor');
-      } finally {
-        globalThis.fetch = originalFetch;
-      }
+      // 2. Query /api/me projection
+      const projection = await getCurrentUserProjection('user_lifecycle_1', 'donor@test.com', mockDb);
+      assert.equal(projection.isVerified, true);
+      assert.equal(projection.onboardingComplete, true);
+      assert.equal(projection.dashboardRoute, '/dashboard/donor');
     });
   });
 });

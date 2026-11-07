@@ -7,8 +7,6 @@ import {
   HeartHandshake,
   Utensils,
   Truck,
-  ShieldCheck,
-  Phone,
   ArrowRight,
   RefreshCw,
   AlertCircle,
@@ -44,8 +42,8 @@ export default function OnboardingPage() {
     }
   }, [isConfigured]);
 
-  // Step state: 1 = Role & Profile, 2 = Location & Preferences, 3 = Phone Verification (Donors/Requesters only)
-  const [step, setStep] = useState<1 | 2 | 3>(1);
+  // Step state: 1 = Role & Profile, 2 = Location & Preferences
+  const [step, setStep] = useState<1 | 2>(1);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [sessionExpired, setSessionExpired] = useState(false);
@@ -68,17 +66,6 @@ export default function OnboardingPage() {
   // Volunteer Preference Fields
   const [vehicleType, setVehicleType] = useState<string>("motorcycle");
   const [maxDistanceKm, setMaxDistanceKm] = useState<number>(10);
-
-  // OTP Verification Fields (for Donors & Requesters)
-  const [countryCode, setCountryCode] = useState("+91");
-  const [phoneNumber, setPhoneNumber] = useState("");
-  const [otpCode, setOtpCode] = useState("");
-  const [otpSending, setOtpSending] = useState(false);
-  const [otpSent, setOtpSent] = useState(false);
-  const [otpCooldown, setOtpCooldown] = useState(0);
-  const [otpError, setOtpError] = useState("");
-  const [otpSuccess, setOtpSuccess] = useState(false);
-  const [attemptsRemaining, setAttemptsRemaining] = useState<number | null>(null);
 
   // Check auth state and existing profile on load
   const checkAuth = useCallback(async () => {
@@ -125,11 +112,6 @@ export default function OnboardingPage() {
             setLatitude(me.defaultLocation.latitude ?? null);
             setLongitude(me.defaultLocation.longitude ?? null);
           }
-
-          // If role is set and donor/requester is not yet verified, advance to Step 3
-          if (!me.isVerified && me.role !== "volunteer") {
-            setStep(3);
-          }
         }
       }
     } catch (err: any) {
@@ -143,15 +125,6 @@ export default function OnboardingPage() {
   useEffect(() => {
     checkAuth();
   }, [checkAuth]);
-
-  // Resend countdown timer
-  useEffect(() => {
-    if (otpCooldown <= 0) return;
-    const interval = setInterval(() => {
-      setOtpCooldown((prev) => (prev > 0 ? prev - 1 : 0));
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [otpCooldown]);
 
   // Request GPS Location with permission detection & manual entry fallback
   const handleRequestGps = useCallback(() => {
@@ -224,7 +197,7 @@ export default function OnboardingPage() {
     setStep(2);
   };
 
-  // Step 2: Complete Profile Creation & Route (or advance to OTP verification)
+  // Step 2: Complete Profile Creation & Route directly to dashboard
   const handleCompleteStep2 = async (e: React.FormEvent) => {
     e.preventDefault();
     setGeneralError("");
@@ -298,115 +271,30 @@ export default function OnboardingPage() {
               router.replace(meJson.data.dashboardRoute);
               return;
             }
-            if (!meJson?.data?.isVerified && meJson?.data?.role !== "volunteer") {
-              setStep(3);
-              return;
-            }
           }
+          router.replace(
+            selectedRole === "donor"
+              ? "/dashboard/donor"
+              : selectedRole === "requester"
+              ? "/dashboard/beneficiary"
+              : "/dashboard/volunteer"
+          );
+          return;
         }
         throw new Error(json?.error?.message || "Failed to save profile. Please try again.");
       }
 
-      // Volunteer onboarding completes immediately with no extra OTP or approval gates
-      if (selectedRole === "volunteer") {
-        router.replace(json?.data?.dashboardRoute || "/dashboard/volunteer");
-        return;
-      }
+      const destination =
+        json?.data?.dashboardRoute ||
+        (selectedRole === "donor"
+          ? "/dashboard/donor"
+          : selectedRole === "requester"
+          ? "/dashboard/beneficiary"
+          : "/dashboard/volunteer");
 
-      // Donor and requester advance to Step 3 for phone OTP verification
-      setStep(3);
+      router.replace(destination);
     } catch (err: any) {
       setGeneralError(err.message || "An unexpected error occurred while saving profile.");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  // Step 3: Send OTP Code
-  const handleSendOtp = async () => {
-    setOtpError("");
-    const cleaned = phoneNumber.replace(/\D/g, "");
-
-    if (cleaned.length < 7) {
-      setOtpError("Please enter a valid phone number with at least 7 digits.");
-      return;
-    }
-
-    const fullPhone = `${countryCode}${cleaned}`;
-    setOtpSending(true);
-
-    try {
-      const res = await fetch("/api/verification/send-code", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ phone: fullPhone }),
-      });
-
-      if (res.status === 401) {
-        setSessionExpired(true);
-        return;
-      }
-
-      const json = await res.json();
-      if (!res.ok) {
-        throw new Error(json?.error?.message || "Failed to send verification code.");
-      }
-
-      setOtpSent(true);
-      setOtpCooldown(json?.data?.resendAfter || 30);
-    } catch (err: any) {
-      setOtpError(err.message || "Failed to send verification code. Please try again.");
-    } finally {
-      setOtpSending(false);
-    }
-  };
-
-  // Step 3: Verify OTP Code
-  const handleVerifyOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setOtpError("");
-    setSubmitting(true);
-
-    const trimmedCode = otpCode.trim();
-    if (!trimmedCode || trimmedCode.length < 4) {
-      setOtpError("Please enter the verification code received via SMS.");
-      setSubmitting(false);
-      return;
-    }
-
-    try {
-      const res = await fetch("/api/verification/verify-code", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: trimmedCode }),
-      });
-
-      if (res.status === 401) {
-        setSessionExpired(true);
-        return;
-      }
-
-      const json = await res.json();
-
-      if (!res.ok) {
-        if (json?.error?.attemptsRemaining !== undefined) {
-          setAttemptsRemaining(json.error.attemptsRemaining);
-        }
-        throw new Error(json?.error?.message || "Verification code is invalid or expired.");
-      }
-
-      setOtpSuccess(true);
-
-      // Route according to canonical role
-      setTimeout(() => {
-        if (selectedRole === "donor") {
-          router.replace("/dashboard/donor");
-        } else {
-          router.replace("/dashboard/beneficiary");
-        }
-      }, 1200);
-    } catch (err: any) {
-      setOtpError(err.message || "Verification failed. Please check your code.");
     } finally {
       setSubmitting(false);
     }
@@ -463,26 +351,14 @@ export default function OnboardingPage() {
         {/* Progress Tracker */}
         <div className="mb-8">
           <div className="flex items-center justify-between text-xs font-bold uppercase tracking-wider text-gray-400 mb-3">
-            <span className={step >= 1 ? "text-brand-charcoal" : ""}>1. Role</span>
-            <span className={step >= 2 ? "text-brand-charcoal" : ""}>2. Location</span>
-            {selectedRole !== "volunteer" && (
-              <span className={step >= 3 ? "text-brand-charcoal" : ""}>3. Phone Verification</span>
-            )}
+            <span className={step >= 1 ? "text-brand-charcoal font-bold" : ""}>1. Role & Profile</span>
+            <span className={step >= 2 ? "text-brand-charcoal font-bold" : ""}>2. Base Location</span>
           </div>
           <div className="w-full bg-gray-100 h-2 rounded-full overflow-hidden">
             <div
               className="bg-brand-gold h-full transition-all duration-300"
               style={{
-                width:
-                  selectedRole === "volunteer"
-                    ? step === 1
-                      ? "50%"
-                      : "100%"
-                    : step === 1
-                    ? "33%"
-                    : step === 2
-                    ? "66%"
-                    : "100%",
+                width: step === 1 ? "50%" : "100%",
               }}
             ></div>
           </div>
@@ -542,8 +418,8 @@ export default function OnboardingPage() {
                     <h3 className="font-bold text-brand-charcoal text-base mb-1">Food Donor</h3>
                     <p className="text-xs text-gray-500">Donate surplus meals from home, catering, or restaurants.</p>
                   </div>
-                  <span className="text-[10px] font-bold mt-4 uppercase text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded-full inline-block w-fit">
-                    Requires Phone OTP
+                  <span className="text-[10px] font-bold mt-4 uppercase text-green-700 bg-green-100 px-2 py-0.5 rounded-full inline-block w-fit">
+                    Email Verified
                   </span>
                 </div>
 
@@ -561,8 +437,8 @@ export default function OnboardingPage() {
                     <h3 className="font-bold text-brand-charcoal text-base mb-1">Requester</h3>
                     <p className="text-xs text-gray-500">Request food for families, communities, or shelters.</p>
                   </div>
-                  <span className="text-[10px] font-bold mt-4 uppercase text-yellow-700 bg-yellow-100 px-2 py-0.5 rounded-full inline-block w-fit">
-                    Requires Phone OTP
+                  <span className="text-[10px] font-bold mt-4 uppercase text-green-700 bg-green-100 px-2 py-0.5 rounded-full inline-block w-fit">
+                    Email Verified
                   </span>
                 </div>
 
@@ -581,7 +457,7 @@ export default function OnboardingPage() {
                     <p className="text-xs text-gray-500">Pick up donations and deliver them locally.</p>
                   </div>
                   <span className="text-[10px] font-bold mt-4 uppercase text-green-700 bg-green-100 px-2 py-0.5 rounded-full inline-block w-fit">
-                    Instant Access (No OTP)
+                    Direct Access
                   </span>
                 </div>
               </div>
@@ -817,152 +693,15 @@ export default function OnboardingPage() {
                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                     <span>Saving Profile...</span>
                   </>
-                ) : selectedRole === "volunteer" ? (
+                ) : (
                   <>
                     <span>Complete Onboarding</span>
                     <CheckCircle2 size={18} className="text-brand-eco" />
-                  </>
-                ) : (
-                  <>
-                    <span>Proceed to Phone Verification</span>
-                    <ArrowRight size={18} />
                   </>
                 )}
               </button>
             </div>
           </form>
-        )}
-
-        {/* STEP 3: Phone OTP Verification (Donors & Requesters) */}
-        {step === 3 && (
-          <div className="space-y-6">
-            <div>
-              <div className="w-12 h-12 bg-yellow-100 text-brand-gold rounded-2xl flex items-center justify-center mb-3">
-                <ShieldCheck size={28} />
-              </div>
-              <h2 className="text-2xl font-bold text-brand-charcoal mb-1">Verify Your Phone Number</h2>
-              <p className="text-gray-500 text-sm">
-                Project Annapurna requires verified contact details for {selectedRole}s to coordinate safe food handovers.
-              </p>
-            </div>
-
-            {otpError && (
-              <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm flex items-start gap-3">
-                <AlertCircle size={18} className="shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-semibold">{otpError}</p>
-                  {attemptsRemaining !== null && (
-                    <p className="text-xs mt-1">Attempts remaining: {attemptsRemaining}</p>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {otpSuccess && (
-              <div className="p-4 bg-green-50 border border-green-200 rounded-xl text-green-700 text-sm flex items-center gap-3 font-semibold">
-                <CheckCircle2 size={20} className="text-brand-eco" />
-                <span>Phone verified successfully! Redirecting to your dashboard...</span>
-              </div>
-            )}
-
-            {!otpSent ? (
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-bold text-gray-700 mb-1">Phone Number (E.164 format)</label>
-                  <div className="flex gap-2">
-                    <select
-                      value={countryCode}
-                      onChange={(e) => setCountryCode(e.target.value)}
-                      className="px-3 py-3 border border-gray-200 rounded-xl bg-gray-50 font-medium text-sm"
-                    >
-                      <option value="+91">🇮🇳 +91</option>
-                      <option value="+1">🇺🇸 +1</option>
-                      <option value="+44">🇬🇧 +44</option>
-                    </select>
-                    <input
-                      type="tel"
-                      value={phoneNumber}
-                      onChange={(e) => setPhoneNumber(e.target.value)}
-                      placeholder="9876543210"
-                      className="flex-1 px-4 py-3 border border-gray-200 rounded-xl focus:ring-2 focus:ring-brand-gold focus:outline-none text-base"
-                    />
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleSendOtp}
-                  disabled={otpSending}
-                  className="w-full py-3.5 bg-brand-charcoal text-white rounded-xl font-bold hover:bg-gray-800 transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
-                >
-                  {otpSending ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      <span>Sending SMS Code...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Phone size={18} />
-                      <span>Send Verification Code</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            ) : (
-              <form onSubmit={handleVerifyOtp} className="space-y-4">
-                <div>
-                  <div className="flex justify-between items-center mb-1">
-                    <label className="block text-sm font-bold text-gray-700">Enter 6-Digit Code</label>
-                    <span className="text-xs text-gray-500">Sent to {countryCode} {phoneNumber}</span>
-                  </div>
-                  <input
-                    type="text"
-                    maxLength={6}
-                    required
-                    value={otpCode}
-                    onChange={(e) => setOtpCode(e.target.value)}
-                    placeholder="123456"
-                    className="w-full px-4 py-3 text-center tracking-widest text-2xl font-black border border-gray-200 rounded-xl focus:ring-2 focus:ring-brand-gold focus:outline-none font-mono"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={submitting || otpSuccess}
-                  className="w-full py-3.5 bg-brand-charcoal text-white rounded-xl font-bold hover:bg-gray-800 transition-colors flex items-center justify-center gap-2 disabled:opacity-60"
-                >
-                  {submitting ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                      <span>Verifying...</span>
-                    </>
-                  ) : (
-                    <>
-                      <span>Confirm & Access Dashboard</span>
-                      <ArrowRight size={18} />
-                    </>
-                  )}
-                </button>
-
-                <div className="flex items-center justify-between text-xs text-gray-500 pt-2">
-                  <span>Didn't receive the SMS?</span>
-                  {otpCooldown > 0 ? (
-                    <span className="font-bold text-gray-400">Resend in {otpCooldown}s</span>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={handleSendOtp}
-                      disabled={otpSending}
-                      className="font-bold text-brand-gold hover:underline flex items-center gap-1"
-                    >
-                      <RefreshCw size={12} />
-                      <span>Resend Code</span>
-                    </button>
-                  )}
-                </div>
-              </form>
-            )}
-          </div>
         )}
       </div>
     </div>

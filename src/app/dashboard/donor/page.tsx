@@ -258,7 +258,7 @@ export default function DonorDashboard() {
 
       if (!res.ok) {
         if (res.status === 403 && result.error?.code === "DONOR_NOT_VERIFIED") {
-          setErrorMessage("Verification required: Please complete phone verification in onboarding to publish listings.");
+          setErrorMessage("Verification required: Please complete profile setup in onboarding to publish listings.");
         } else if (res.status === 401) {
           setErrorMessage("Session expired. Please sign in again.");
         } else {
@@ -398,11 +398,11 @@ export default function DonorDashboard() {
         <div className="bg-amber-50 border border-amber-200 rounded-2xl p-8 text-center">
           <ShieldAlert size={48} className="text-amber-600 mx-auto mb-4" />
           <h2 className="text-2xl font-bold text-amber-900 mb-2">
-            {!userProfile.is_verified ? "Phone Verification Required" : "Donor Access Restricted"}
+            {!userProfile.is_verified ? "Profile Verification Required" : "Donor Access Restricted"}
           </h2>
           <p className="text-amber-700 mb-6 max-w-lg mx-auto">
             {!userProfile.is_verified
-              ? "To ensure surplus food safety and traceable donations, donors must complete phone verification."
+              ? "To ensure surplus food safety and traceable donations, donors must complete onboarding."
               : "Your current account is registered under a different role. Please switch or complete donor onboarding."}
           </p>
           <Link

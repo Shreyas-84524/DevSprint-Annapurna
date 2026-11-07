@@ -15,13 +15,14 @@ Status: Stage 1 contract baseline. Contract changes require Codex review; backen
 
 | Method and path | Request | Result |
 |---|---|---|
-| `POST /api/onboarding/profile` | `{ role: donor|requester|volunteer, displayName, location? }` | Creates the one-time canonical profile; rejects `admin` |
-| `POST /api/verification/send-code` | `{ phone }` | Normalizes E.164 phone, creates a server-side pending session, calls Swift send with a unique idempotency key, and returns safe request/expiry/resend metadata |
-| `POST /api/verification/verify-code` | `{ code }` within the authenticated pending session | Resolves authoritative phone/request ID server-side, calls Swift verify, consumes the session, and records donor/requester verification |
+| `POST /api/auth/email/send` | `{ email, purpose }` | Validates email, prevents role escalation, sends passwordless OTP via Supabase Auth |
+| `POST /api/auth/email/verify` | `{ email, token, purpose }` | Verifies 6-digit email OTP via Supabase Auth, writes HTTP-only session cookies, returns role and redirectUrl |
+| `POST /api/auth/logout` | none | Signs out Supabase session and clears HTTP-only auth cookies |
+| `POST /api/onboarding/profile` | `{ role: donor\|requester\|volunteer, displayName, location }` | Creates the one-time canonical profile with base location; rejects `admin` |
 | `GET /api/me` | none | Minimal role, verification, onboarding, and dashboard-routing DTO |
 | `PUT /api/me/locations/:id` | Label and map pin | Upserts only the caller's location |
 
-Swift is called at `${SWIFT_BASE_URL}/api/v1/otp/send` and `/api/v1/otp/verify` with server-only `X-Project-Key: SWIFT_PROJECT_KEY`. Sends use `Idempotency-Key`; the same key is reused only for the exact retry of one attempt. Handle `400`, `401`, `403`, `404`, `410`, `429`, and bounded `500/503` failures without exposing upstream credentials or raw error internals. `QUEUED` means accepted by Swift, not delivered. Do not implement a mock or replacement service on the production path.
+Passwordless email authentication is managed natively by Supabase Auth (`signInWithOtp` and `verifyOtp` with type `'email'`). Session cookies (`sb-<project-ref>-auth-token`) are set with HTTP-only security by the server boundary handler. Users complete role-based onboarding with verified status upon email verification.
 
 ## Listings and discovery
 

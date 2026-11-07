@@ -100,9 +100,7 @@ export async function createCanonicalProfile(
 
   const trimmedLabel = label?.trim() || 'Default Location';
 
-  // 4. Determine verification status: Volunteers require no phone OTP verification
-  const isVolunteer = input.role === 'volunteer';
-  const isVerified = isVolunteer;
+  // 4. Determine verification status: With passwordless email OTP, all onboarded users are verified
 
   // 5. Perform the entire write through one privileged database transaction.
   const vehicleType = input.volunteerPreferences?.vehicleType || 'motorcycle';
@@ -170,9 +168,9 @@ export async function createCanonicalProfile(
   // 6. Determine destination dashboard route
   let dashboardRoute = '/onboarding';
   if (input.role === 'requester') {
-    dashboardRoute = isVerified ? '/dashboard/beneficiary' : '/onboarding';
+    dashboardRoute = '/dashboard/beneficiary';
   } else if (input.role === 'donor') {
-    dashboardRoute = isVerified ? '/dashboard/donor' : '/onboarding';
+    dashboardRoute = '/dashboard/donor';
   } else if (input.role === 'volunteer') {
     dashboardRoute = '/dashboard/volunteer';
   }

@@ -3,13 +3,6 @@ import assert from 'node:assert/strict';
 import { NextRequest } from 'next/server';
 import { getProtectedRouteRedirect, proxy } from '../src/proxy';
 import { POST as adminBootstrapHandler } from '../src/app/api/admin/bootstrap/route';
-import {
-  confirmPhoneVerification,
-  getVerificationRecordAsync,
-  initiatePhoneVerification,
-} from '../src/server/verification';
-import { SwiftError } from '../src/server/swift';
-import { InMemoryVerificationClient } from './helpers/verification-client';
 
 describe('Integration boundary suite', () => {
   afterEach(() => {
@@ -109,79 +102,6 @@ describe('Integration boundary suite', () => {
         assert.equal(second.status, 409);
         const secondPayload = await second.json();
         assert.equal(secondPayload.error.code, 'ADMIN_ALREADY_EXISTS');
-      } finally {
-        globalThis.fetch = originalFetch;
-      }
-    });
-  });
-
-  describe('durable verification RPC boundary', () => {
-    it('persists proof state in an explicitly shared store and rejects replay', async () => {
-      const database = new InMemoryVerificationClient();
-      const config = {
-        baseUrl: 'https://mock-swift.local',
-        projectKey: 'test_project_key',
-      };
-
-      const originalFetch = globalThis.fetch;
-      globalThis.fetch = async (input) => {
-        const url = String(input);
-        if (url.includes('/send')) {
-          return Response.json({
-            request_id: 'swift_proof_req_999',
-            phone: '+919876500000',
-            status: 'QUEUED',
-            expires_in: 600,
-            resend_after: 60,
-          });
-        }
-        if (url.includes('/verify')) {
-          return Response.json({
-            verified: true,
-            phone: '+919876500000',
-            verified_at: new Date().toISOString(),
-          });
-        }
-        return new Response('Not found', { status: 404 });
-      };
-
-      try {
-        const userId = 'user_serverless_isolation_1';
-        const sent = await initiatePhoneVerification({
-          userId,
-          phone: '+919876500000',
-          customConfig: config,
-          customClient: database,
-        });
-        assert.equal(sent.requestId, 'swift_proof_req_999');
-
-        const verified = await confirmPhoneVerification({
-          userId,
-          otp: '654321',
-          requestId: sent.requestId,
-          customConfig: config,
-          customClient: database,
-        });
-        assert.equal(verified.proofId, 'swift_proof_req_999');
-
-        const record = await getVerificationRecordAsync(userId, database);
-        assert.equal(record?.proofId, 'swift_proof_req_999');
-        assert.notEqual(record?.proofId, record?.phone);
-
-        await assert.rejects(
-          () => confirmPhoneVerification({
-            userId,
-            otp: '654321',
-            requestId: sent.requestId,
-            customConfig: config,
-            customClient: database,
-          }),
-          (error: SwiftError) => {
-            assert.equal(error.code, 'CHALLENGE_ALREADY_CONSUMED');
-            assert.equal(error.status, 409);
-            return true;
-          }
-        );
       } finally {
         globalThis.fetch = originalFetch;
       }

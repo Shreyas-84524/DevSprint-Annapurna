@@ -5,8 +5,7 @@ Status: proposed Stage 1 target; implementation not yet verified
 ## Runtime boundaries
 
 - Next.js 16 App Router on Vercel renders UI and hosts authenticated Route Handlers under `src/app/api`.
-- Supabase provides Auth, Postgres, Storage, Realtime, RLS, and transactional database functions.
-- The existing Swift service remains the OTP issuer/verifier. Annapurna calls Swift only from server code using `SWIFT_BASE_URL` and `SWIFT_PROJECT_KEY`; browser code calls Annapurna endpoints and never receives the Swift key.
+- Supabase provides Auth, Postgres, Storage, Realtime, RLS, transactional database functions, and passwordless email OTP authentication.
 - Leaflet renders maps in the browser. OpenRouteService supplies routes through a server-side adapter and cache.
 
 The installed Next.js 16.2.4 documentation was consulted. Route Handlers are public HTTP endpoints and must perform authorization. Authorization should be close to the data source through a server-only data-access layer. The current `middleware.ts` convention is deprecated in this installed version in favor of `proxy.ts`; migration is an implementation task, not a Stage 1 Codex edit.
@@ -28,9 +27,7 @@ Public listing DTOs exclude exact pickup details. Exact pickup information becom
 
 ## Authentication and verification
 
-Supabase Auth establishes the account session. A server-side onboarding operation writes the canonical role once. For donor/requester phone verification, Annapurna sends through Swift `/api/v1/otp/send`, stores the returned request ID and normalized E.164 phone in a server-side pending session, and verifies through `/api/v1/otp/verify`. The client supplies only the code within the same pending session; it cannot replace the authoritative phone or request ID. Successful verification creates an application verification record and consumes the pending session. OTP values and Swift keys are never persisted in application tables or logs.
-
-Admin bootstrap is out-of-band and documented. Public clients cannot select or grant admin.
+Supabase Auth establishes the account session via passwordless email OTP (`signInWithOtp` and `verifyOtp` with type `'email'`). A server-side onboarding operation writes the canonical role once upon base location setup. All completed profiles are verified upfront. Session cookies are maintained securely via `@supabase/ssr` with HTTP-only attributes. Admin bootstrap is out-of-band and documented; public clients cannot select or grant admin.
 
 ## Workflow architecture
 
@@ -63,8 +60,6 @@ Vercel functions remain stateless and do not host a custom persistent WebSocket 
 - `SUPABASE_SERVICE_ROLE_KEY`: Server-only secret for administrative operations, challenge management, and cron jobs. Never exposed to browser.
 - `NEXT_PUBLIC_APP_URL`: Canonical site origin (e.g., `https://annapurna-steel.vercel.app`).
 - `ADMIN_BOOTSTRAP_SECRET`: Server-only secret for initial administrative provisioning (`/api/admin/bootstrap`).
-- `SWIFT_BASE_URL`: Server-only Swift OTP service base URL.
-- `SWIFT_PROJECT_KEY`: Server-only Swift authentication key. Never bundled into client components.
 - `GEOAPIFY_API_KEY`: Server-only key for route geometry calculations (`/api/routing`).
 - `NEXT_PUBLIC_GEOAPIFY_MAP_KEY`: Public map tile key (falls back to OpenStreetMap standard tiles).
 - `CRON_SECRET`: Server-only secret protecting Vercel Cron endpoints.

@@ -233,7 +233,7 @@ export default function RequesterDashboard() {
         } else if (res.status === 410) {
           setErrorMessage("This listing has expired and cannot be claimed.");
         } else if (res.status === 403) {
-          setErrorMessage("Unauthorized: Requester must be phone-verified to claim food.");
+          setErrorMessage("Unauthorized: Requester must be verified to claim food.");
         } else {
           setErrorMessage(result.error?.message || "Failed to claim listing. Please try again.");
         }
@@ -269,11 +269,11 @@ export default function RequesterDashboard() {
         <div className="bg-amber-50 border border-amber-200 rounded-2xl p-8 text-center">
           <ShieldAlert size={48} className="text-amber-600 mx-auto mb-4" />
           <h2 className="text-2xl font-bold text-amber-900 mb-2">
-            {!userProfile.is_verified ? "Phone Verification Required" : "Requester Access Restricted"}
+            {!userProfile.is_verified ? "Profile Verification Required" : "Requester Access Restricted"}
           </h2>
           <p className="text-amber-700 mb-6 max-w-lg mx-auto">
             {!userProfile.is_verified
-              ? "To ensure community food security and prevent duplicate claims, requesters must complete phone verification."
+              ? "To ensure community food security and prevent duplicate claims, requesters must complete onboarding."
               : "Your account is registered under a different role. Please switch or complete requester onboarding."}
           </p>
           <Link

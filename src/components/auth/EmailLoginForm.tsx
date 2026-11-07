@@ -62,7 +62,6 @@ export function EmailLoginForm({
     async (e?: React.FormEvent) => {
       if (e) e.preventDefault();
       setError(null);
-      setErrorCode(null);
       setInfoNotice(null);
 
       const trimmedEmail = email.trim();
@@ -116,7 +115,6 @@ export function EmailLoginForm({
     async (e: React.FormEvent) => {
       e.preventDefault();
       setError(null);
-      setErrorCode(null);
 
       const trimmedCode = otpCode.trim();
       if (!trimmedCode || !/^\d{4,8}$/.test(trimmedCode)) {
@@ -140,7 +138,6 @@ export function EmailLoginForm({
 
         if (!res.ok) {
           const err = json?.error;
-          setErrorCode(err?.code || "VERIFY_FAILED");
           setError(err?.message || "Invalid or expired code. Please try again.");
           return;
         }
