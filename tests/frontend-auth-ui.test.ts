@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { OnboardingRole, UserRole, AdminStatsDTO } from '../src/types/contracts';
 import { resolvePostAuthDestination } from '../src/components/auth/authNavigation';
+import { resolveNavbarSession } from '../src/components/layout/navbarAuth';
 
 /**
  * Frontend Auth UI and Admin Operations State Suite
@@ -120,6 +121,23 @@ describe('Frontend Auth UI & Admin Operations Suite', () => {
   });
 
   describe('2. Client API Response & Redirection Mapping', () => {
+    it('shows signed-out navigation when the current-user request is unauthorized', () => {
+      assert.deepEqual(resolveNavbarSession(false, { data: null }), {
+        status: 'signed_out',
+      });
+    });
+
+    it('shows the canonical dashboard and rejects unsafe dashboard destinations', () => {
+      assert.deepEqual(
+        resolveNavbarSession(true, { data: { dashboardRoute: '/dashboard/donor' } }),
+        { status: 'signed_in', dashboardRoute: '/dashboard/donor' }
+      );
+      assert.deepEqual(
+        resolveNavbarSession(true, { data: { dashboardRoute: 'https://attacker.example' } }),
+        { status: 'signed_out' }
+      );
+    });
+
     it('allows only known local post-authentication destinations', () => {
       assert.equal(resolvePostAuthDestination('/dashboard/donor'), '/dashboard/donor');
       assert.equal(resolvePostAuthDestination('/dashboard/beneficiary'), '/dashboard/beneficiary');

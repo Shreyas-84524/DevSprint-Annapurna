@@ -2,14 +2,18 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { Utensils, Menu, X } from "lucide-react";
+import { LayoutDashboard, LogIn, LogOut, Menu, UserPlus, Utensils, X } from "lucide-react";
 import { usePathname } from "next/navigation";
-import { useState, useEffect } from "react";
+import { useCallback, useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import NotificationBell from "@/components/notifications/NotificationBell";
+import { NavbarSession, resolveNavbarSession } from "@/components/layout/navbarAuth";
 
 export default function Navbar() {
   const [isOpen, setIsOpen] = useState(false);
+  const [session, setSession] = useState<NavbarSession>({ status: "loading" });
+  const [isSigningOut, setIsSigningOut] = useState(false);
+  const [signOutError, setSignOutError] = useState<string | null>(null);
   const pathname = usePathname();
 
   const links = [
@@ -33,6 +37,48 @@ export default function Navbar() {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isOpen]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadSession() {
+      try {
+        const response = await fetch("/api/me", { cache: "no-store" });
+        const payload = await response.json().catch(() => null);
+        if (!cancelled) {
+          setSession(resolveNavbarSession(response.ok, payload));
+        }
+      } catch {
+        if (!cancelled) {
+          setSession({ status: "signed_out" });
+        }
+      }
+    }
+
+    loadSession();
+    return () => {
+      cancelled = true;
+    };
+  }, [pathname]);
+
+  const handleSignOut = useCallback(async () => {
+    if (isSigningOut) return;
+
+    setIsSigningOut(true);
+    setSignOutError(null);
+    try {
+      const response = await fetch("/api/auth/logout", { method: "POST" });
+      if (!response.ok) {
+        throw new Error("Sign out failed");
+      }
+      window.location.replace("/login");
+    } catch {
+      setSignOutError("Could not sign out. Please try again.");
+      setIsSigningOut(false);
+    }
+  }, [isSigningOut]);
+
+  const isSignedIn = session.status === "signed_in";
 
   return (
     <nav className="bg-black border-b border-gray-800 sticky top-0 z-40" aria-label="Main Navigation">
@@ -80,10 +126,40 @@ export default function Navbar() {
             })}
           </div>
 
-          {/* Right actions: Notifications & CTA */}
+          {/* Right actions: authentication, notifications & CTA */}
           <div className="flex items-center gap-3">
-            {/* In-app Notification Bell */}
-            <NotificationBell />
+            {isSignedIn ? (
+              <>
+                <NotificationBell />
+                <Link
+                  href={session.dashboardRoute}
+                  prefetch={false}
+                  className="hidden xl:inline-flex items-center gap-2 px-3 py-2 text-sm font-semibold text-white hover:bg-gray-800 rounded-xl transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold"
+                >
+                  <LayoutDashboard size={16} aria-hidden="true" />
+                  <span>Dashboard</span>
+                </Link>
+                <button
+                  type="button"
+                  onClick={handleSignOut}
+                  disabled={isSigningOut}
+                  aria-label={isSigningOut ? "Signing out" : "Sign out"}
+                  className="inline-flex items-center gap-2 px-3 py-2 text-sm font-semibold text-gray-200 hover:text-white hover:bg-gray-800 rounded-xl transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold disabled:opacity-50"
+                >
+                  <LogOut size={16} aria-hidden="true" />
+                  <span className="hidden xl:inline">{isSigningOut ? "Signing out..." : "Sign Out"}</span>
+                </button>
+              </>
+            ) : (
+              <Link
+                href="/login"
+                prefetch={false}
+                className="inline-flex items-center gap-2 px-3 py-2 bg-white text-brand-charcoal rounded-xl font-bold hover:bg-gray-100 transition-colors text-xs sm:text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold focus-visible:ring-offset-2 focus-visible:ring-offset-black"
+              >
+                <LogIn size={16} aria-hidden="true" />
+                <span>Sign In</span>
+              </Link>
+            )}
 
             {/* Desktop CTA */}
             <div className="hidden sm:block">
@@ -139,6 +215,50 @@ export default function Navbar() {
                   </Link>
                 );
               })}
+              <div className="border-t border-gray-800 mt-3 pt-3 space-y-2">
+                {isSignedIn ? (
+                  <>
+                    <Link
+                      href={session.dashboardRoute}
+                      prefetch={false}
+                      onClick={() => setIsOpen(false)}
+                      className="flex items-center gap-2 px-3 py-3 rounded-xl text-base font-semibold text-white hover:bg-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold"
+                    >
+                      <LayoutDashboard size={18} aria-hidden="true" />
+                      <span>My Dashboard</span>
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={handleSignOut}
+                      disabled={isSigningOut}
+                      className="w-full flex items-center gap-2 px-3 py-3 rounded-xl text-base font-semibold text-left text-gray-300 hover:text-white hover:bg-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold disabled:opacity-50"
+                    >
+                      <LogOut size={18} aria-hidden="true" />
+                      <span>{isSigningOut ? "Signing out..." : "Sign Out"}</span>
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <Link
+                      href="/login"
+                      prefetch={false}
+                      onClick={() => setIsOpen(false)}
+                      className="flex items-center gap-2 px-3 py-3 rounded-xl text-base font-bold text-white bg-gray-800 hover:bg-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold"
+                    >
+                      <LogIn size={18} aria-hidden="true" />
+                      <span>Sign In</span>
+                    </Link>
+                    <Link
+                      href="/register"
+                      onClick={() => setIsOpen(false)}
+                      className="flex items-center gap-2 px-3 py-3 rounded-xl text-base font-semibold text-brand-gold hover:bg-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-gold"
+                    >
+                      <UserPlus size={18} aria-hidden="true" />
+                      <span>Create Account</span>
+                    </Link>
+                  </>
+                )}
+              </div>
               <div className="px-3 pt-4 sm:hidden">
                 <Link
                   href="/dashboard/donor"
@@ -153,6 +273,14 @@ export default function Navbar() {
           </motion.div>
         )}
       </AnimatePresence>
+      {signOutError && (
+        <div
+          role="alert"
+          className="absolute right-4 top-16 mt-2 max-w-sm rounded-xl border border-red-700 bg-red-950 px-4 py-3 text-sm text-red-100 shadow-xl"
+        >
+          {signOutError}
+        </div>
+      )}
     </nav>
   );
 }
