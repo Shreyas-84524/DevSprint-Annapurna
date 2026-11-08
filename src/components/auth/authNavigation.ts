@@ -16,4 +16,3 @@ export function resolvePostAuthDestination(destination: unknown): string {
     ? destination
     : "/onboarding";
 }
-
