@@ -5,7 +5,7 @@ Status: proposed Stage 1 target; implementation not yet verified
 ## Runtime boundaries
 
 - Next.js 16 App Router on Vercel renders UI and hosts authenticated Route Handlers under `src/app/api`.
-- Supabase provides Auth, Postgres, Storage, Realtime, RLS, transactional database functions, and passwordless email OTP authentication.
+- Supabase provides Auth, Postgres, Storage, Realtime, RLS, transactional database functions, and email/password authentication.
 - Leaflet renders maps in the browser. OpenRouteService supplies routes through a server-side adapter and cache.
 
 The installed Next.js 16.2.4 documentation was consulted. Route Handlers are public HTTP endpoints and must perform authorization. Authorization should be close to the data source through a server-only data-access layer. The current `middleware.ts` convention is deprecated in this installed version in favor of `proxy.ts`; migration is an implementation task, not a Stage 1 Codex edit.
@@ -27,7 +27,7 @@ Public listing DTOs exclude exact pickup details. Exact pickup information becom
 
 ## Authentication and verification
 
-Supabase Auth establishes the account session via passwordless email OTP (`signInWithOtp` and `verifyOtp` with type `'email'`). A server-side onboarding operation writes the canonical role once upon base location setup. All completed profiles are verified upfront. Session cookies are maintained securely via `@supabase/ssr` with HTTP-only attributes. Admin bootstrap is out-of-band and documented; public clients cannot select or grant admin.
+Supabase Auth establishes the account session with email and password. A server-side onboarding operation writes the canonical role once upon base location setup. Completed profiles are verified according to the configured email and onboarding policy. Session cookies are maintained through `@supabase/ssr`; post-login navigation performs a validated document request so newly committed cookies are visible to route protection. Password recovery uses the configured Supabase recovery-email flow. Admin bootstrap is out-of-band and documented; public clients cannot select or grant admin.
 
 ## Workflow architecture
 

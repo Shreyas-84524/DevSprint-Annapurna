@@ -11,11 +11,11 @@ Annapurna coordinates time-sensitive surplus food from donors to requesters thro
 
 ### Donor
 
-Registers, completes existing OTP verification, records a pickup location, publishes and manages food listings, and observes claim and delivery progress.
+Registers and signs in with email and password, completes onboarding, records a pickup location, publishes and manages food listings, and observes claim and delivery progress.
 
 ### Requester
 
-Registers, completes existing OTP verification, records a delivery location, discovers nearby listings, claims one whole listing, observes authorized delivery progress, and confirms receipt.
+Registers and signs in with email and password, completes onboarding, records a delivery location, discovers nearby listings, claims one whole listing, observes authorized delivery progress, and confirms receipt.
 
 ### Volunteer
 
@@ -30,7 +30,7 @@ Is created only through a secure bootstrap process. Admin manages retained CMS a
 ### Identity and onboarding
 
 - One role per account.
-- Donor/requester verification consumes a trusted proof from the user's existing OTP system; Annapurna does not issue replacement OTPs.
+- Donor/requester sessions use Supabase email/password authentication. Canonical role and onboarding state are resolved server-side and cannot be changed by choosing a different login portal.
 - Verification and role mutations are privileged operations with audit records.
 - Location entry supports map pin, manual correction, browser location permission, denial, and retry.
 

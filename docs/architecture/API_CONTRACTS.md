@@ -15,14 +15,16 @@ Status: Stage 1 contract baseline. Contract changes require Codex review; backen
 
 | Method and path | Request | Result |
 |---|---|---|
-| `POST /api/auth/email/send` | `{ email, purpose }` | Validates email, prevents role escalation, sends passwordless OTP via Supabase Auth |
-| `POST /api/auth/email/verify` | `{ email, token, purpose }` | Verifies 6-digit email OTP via Supabase Auth, writes HTTP-only session cookies, returns role and redirectUrl |
+| `POST /api/auth/signup` | `{ email, password, role: donor\|requester\|volunteer }` | Creates a Supabase email/password account; public admin signup is rejected |
+| `POST /api/auth/login` | `{ email, password, portalRole? }` | Establishes the cookie-backed session and returns the canonical role and role-safe redirect URL |
+| `POST /api/auth/forgot-password` | `{ email }` | Requests a password-recovery email and returns a neutral response that does not disclose account existence |
+| `POST /api/auth/update-password` | `{ password }` | Updates the password for an authenticated recovery session |
 | `POST /api/auth/logout` | none | Signs out Supabase session and clears HTTP-only auth cookies |
 | `POST /api/onboarding/profile` | `{ role: donor\|requester\|volunteer, displayName, location }` | Creates the one-time canonical profile with base location; rejects `admin` |
 | `GET /api/me` | none | Minimal role, verification, onboarding, and dashboard-routing DTO |
 | `PUT /api/me/locations/:id` | Label and map pin | Upserts only the caller's location |
 
-Passwordless email authentication is managed natively by Supabase Auth (`signInWithOtp` and `verifyOtp` with type `'email'`). Session cookies (`sb-<project-ref>-auth-token`) are set with HTTP-only security by the server boundary handler. Users complete role-based onboarding with verified status upon email verification.
+Email/password authentication is managed by Supabase Auth. Session cookies are written by the server boundary through `@supabase/ssr`. After login the browser performs a validated full-document navigation to the canonical role destination so the protected request observes the committed cookie and cannot reuse a stale unauthenticated App Router response. Role selection in the browser never changes the canonical profile role.
 
 ## Listings and discovery
 

@@ -9,7 +9,7 @@ Deliver a food-only redistribution workflow in which a verified donor publishes 
 
 ## Core journey
 
-1. A donor registers, signs in, completes the existing external OTP verification, and saves a location.
+1. A donor registers and signs in with email and password, completes onboarding, and saves a location.
 2. The donor publishes a food listing with expiry, pickup location, and an optional image.
 3. A verified requester discovers nearby available food and atomically claims the whole listing.
 4. An authenticated volunteer accepts the resulting delivery. Volunteers do not require additional OTP verification or manual approval in this MVP.
@@ -28,7 +28,7 @@ The canonical backend role values are `donor`, `requester`, `volunteer`, and `ad
 - At most one active claim per listing.
 - At most one assigned volunteer per delivery.
 - At most one active delivery per volunteer.
-- Donor and requester verification is enforced server-side through the existing OTP proof interface.
+- Donor and requester identity, onboarding completion, and canonical roles are enforced server-side; role selection in the browser is not trusted.
 - A user cannot change their own role or verification state.
 - Pickup details and live tracking are visible only to authorized participants.
 - Claim, volunteer acceptance, and delivery transitions are atomic and retry-safe.
@@ -53,7 +53,7 @@ Real payments, payouts, earnings or wallets, Aadhaar collection, tax receipts, N
 
 ## Unresolved dependencies
 
-- Secure configuration and live verification of the supplied Swift SMS OTP project key and Android gateway.
+- Hosted Supabase email/password, recovery-email, redirect URL, and session-cookie configuration must be verified before production release.
 - Authorization and project identity of the configured Supabase MCP project.
 - Dedicated Supabase project creation, if the configured project is not Annapurna.
 - Current OpenRouteService account quota and key placement; this must be verified before Stage 4.
