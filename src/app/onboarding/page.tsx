@@ -116,7 +116,7 @@ export default function OnboardingPage() {
       }
     } catch (err: any) {
       console.error("Failed to check auth state:", err);
-      setGeneralError("Unable to verify account status. Please check your network connection.");
+      setGeneralError("Unable to check account setup. Please check your network connection.");
     } finally {
       setLoading(false);
     }
@@ -418,9 +418,6 @@ export default function OnboardingPage() {
                     <h3 className="font-bold text-brand-charcoal text-base mb-1">Food Donor</h3>
                     <p className="text-xs text-gray-500">Donate surplus meals from home, catering, or restaurants.</p>
                   </div>
-                  <span className="text-[10px] font-bold mt-4 uppercase text-green-700 bg-green-100 px-2 py-0.5 rounded-full inline-block w-fit">
-                    Email Verified
-                  </span>
                 </div>
 
                 {/* Requester */}
@@ -437,9 +434,6 @@ export default function OnboardingPage() {
                     <h3 className="font-bold text-brand-charcoal text-base mb-1">Requester</h3>
                     <p className="text-xs text-gray-500">Request food for families, communities, or shelters.</p>
                   </div>
-                  <span className="text-[10px] font-bold mt-4 uppercase text-green-700 bg-green-100 px-2 py-0.5 rounded-full inline-block w-fit">
-                    Email Verified
-                  </span>
                 </div>
 
                 {/* Volunteer */}

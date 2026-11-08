@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   FOOD_TYPES,
   FoodType,
@@ -16,6 +17,26 @@ import {
  * optimistic concurrency handling, one-active-delivery enforcement, and negative states.
  */
 describe('Core Food Workflow UI Suite', () => {
+  describe('Dashboard access regression', () => {
+    const donorSource = readFileSync(new URL('../src/app/dashboard/donor/page.tsx', import.meta.url), 'utf8');
+    const requesterSource = readFileSync(new URL('../src/app/dashboard/beneficiary/page.tsx', import.meta.url), 'utf8');
+    const onboardingSource = readFileSync(new URL('../src/app/onboarding/page.tsx', import.meta.url), 'utf8');
+
+    it('does not block donor or requester UI on the legacy verification flag', () => {
+      assert.doesNotMatch(donorSource, /is_verified|DONOR_NOT_VERIFIED|Profile Verification Required/);
+      assert.doesNotMatch(requesterSource, /is_verified|REQUESTER_NOT_VERIFIED|Profile Verification Required/);
+    });
+
+    it('retains canonical role protection on both dashboards', () => {
+      assert.match(donorSource, /userProfile\.role !== "donor"/);
+      assert.match(requesterSource, /userProfile\.role !== "requester"/);
+    });
+
+    it('does not present onboarding role choices as verification badges', () => {
+      assert.doesNotMatch(onboardingSource, /Email Verified|Complete Onboarding & Verification/);
+    });
+  });
+
   describe('1. Donor Listing Creation & State Handling', () => {
     it('validates donor listing form fields client-side before submission', () => {
       const validateDonorForm = (form: {
@@ -95,19 +116,16 @@ describe('Core Food Workflow UI Suite', () => {
       assert.equal(validateImage('image/png', 6 * 1024 * 1024).valid, false);
     });
 
-    it('enforces verified donor check before allowing listing creation', () => {
+    it('allows donor listing creation regardless of the legacy verification flag', () => {
       const checkDonorPostingAccess = (profile: { role: string; is_verified: boolean }) => {
         if (profile.role !== 'donor') {
           return { allowed: false, reason: 'FORBIDDEN_ROLE' };
-        }
-        if (!profile.is_verified) {
-          return { allowed: false, reason: 'DONOR_NOT_VERIFIED' };
         }
         return { allowed: true };
       };
 
       assert.equal(checkDonorPostingAccess({ role: 'donor', is_verified: true }).allowed, true);
-      assert.equal(checkDonorPostingAccess({ role: 'donor', is_verified: false }).allowed, false);
+      assert.equal(checkDonorPostingAccess({ role: 'donor', is_verified: false }).allowed, true);
       assert.equal(checkDonorPostingAccess({ role: 'volunteer', is_verified: true }).allowed, false);
     });
 
@@ -189,19 +207,16 @@ describe('Core Food Workflow UI Suite', () => {
       assert.equal(keys.includes('pickupInstructions'), false);
     });
 
-    it('requires phone-verified requester before permitting food claims', () => {
+    it('allows requester claims regardless of the legacy verification flag', () => {
       const checkRequesterClaimAccess = (profile: { role: string; is_verified: boolean }) => {
         if (profile.role !== 'requester') {
           return { allowed: false, reason: 'FORBIDDEN_ROLE' };
-        }
-        if (!profile.is_verified) {
-          return { allowed: false, reason: 'REQUESTER_NOT_VERIFIED' };
         }
         return { allowed: true };
       };
 
       assert.equal(checkRequesterClaimAccess({ role: 'requester', is_verified: true }).allowed, true);
-      assert.equal(checkRequesterClaimAccess({ role: 'requester', is_verified: false }).allowed, false);
+      assert.equal(checkRequesterClaimAccess({ role: 'requester', is_verified: false }).allowed, true);
       assert.equal(checkRequesterClaimAccess({ role: 'donor', is_verified: true }).allowed, false);
     });
 
@@ -391,7 +406,6 @@ describe('Core Food Workflow UI Suite', () => {
         | 'validation_error'
         | 'uploading'
         | 'unauthorized'
-        | 'verification_required'
         | 'session_expired'
         | 'stale_version'
         | 'conflict'
@@ -408,12 +422,10 @@ describe('Core Food Workflow UI Suite', () => {
         hasStaleVersion?: boolean;
         isExpired?: boolean;
         isOffline?: boolean;
-        isVerified?: boolean;
         isAuthenticated?: boolean;
       }): UIState => {
         if (params.loading) return 'loading';
         if (!params.isAuthenticated) return 'unauthorized';
-        if (!params.isVerified) return 'verification_required';
         if (params.isOffline) return 'offline_retry';
         if (params.hasStaleVersion) return 'stale_version';
         if (params.hasConflict) return 'conflict';
@@ -424,13 +436,12 @@ describe('Core Food Workflow UI Suite', () => {
 
       assert.equal(stateClassifier({ loading: true }), 'loading');
       assert.equal(stateClassifier({ isAuthenticated: false }), 'unauthorized');
-      assert.equal(stateClassifier({ isAuthenticated: true, isVerified: false }), 'verification_required');
-      assert.equal(stateClassifier({ isAuthenticated: true, isVerified: true, isOffline: true }), 'offline_retry');
-      assert.equal(stateClassifier({ isAuthenticated: true, isVerified: true, hasStaleVersion: true }), 'stale_version');
-      assert.equal(stateClassifier({ isAuthenticated: true, isVerified: true, hasConflict: true }), 'conflict');
-      assert.equal(stateClassifier({ isAuthenticated: true, isVerified: true, isExpired: true }), 'expired');
-      assert.equal(stateClassifier({ isAuthenticated: true, isVerified: true, itemsCount: 0 }), 'empty');
-      assert.equal(stateClassifier({ isAuthenticated: true, isVerified: true, itemsCount: 5 }), 'success');
+      assert.equal(stateClassifier({ isAuthenticated: true, isOffline: true }), 'offline_retry');
+      assert.equal(stateClassifier({ isAuthenticated: true, hasStaleVersion: true }), 'stale_version');
+      assert.equal(stateClassifier({ isAuthenticated: true, hasConflict: true }), 'conflict');
+      assert.equal(stateClassifier({ isAuthenticated: true, isExpired: true }), 'expired');
+      assert.equal(stateClassifier({ isAuthenticated: true, itemsCount: 0 }), 'empty');
+      assert.equal(stateClassifier({ isAuthenticated: true, itemsCount: 5 }), 'success');
     });
   });
 });

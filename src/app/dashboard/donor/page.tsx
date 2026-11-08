@@ -87,7 +87,7 @@ export default function DonorDashboard() {
       } else {
         const { data: profile } = await supabase
           .from("profiles")
-          .select("id, role, is_verified, display_name")
+          .select("id, role, display_name")
           .eq("id", user.id)
           .maybeSingle();
         setUserProfile(profile);
@@ -257,8 +257,8 @@ export default function DonorDashboard() {
       const result = await res.json();
 
       if (!res.ok) {
-        if (res.status === 403 && result.error?.code === "DONOR_NOT_VERIFIED") {
-          setErrorMessage("Verification required: Please complete profile setup in onboarding to publish listings.");
+        if (res.status === 403) {
+          setErrorMessage("This account does not have permission to publish food listings.");
         } else if (res.status === 401) {
           setErrorMessage("Session expired. Please sign in again.");
         } else {
@@ -391,25 +391,21 @@ export default function DonorDashboard() {
     }
   };
 
-  // Unverified or wrong role state
-  if (!isLoading && userProfile && (!userProfile.is_verified || userProfile.role !== "donor")) {
+  // Preserve canonical role isolation without treating account verification as an access gate.
+  if (!isLoading && userProfile && userProfile.role !== "donor") {
     return (
       <div className="max-w-4xl mx-auto px-4 py-16">
         <div className="bg-amber-50 border border-amber-200 rounded-2xl p-8 text-center">
           <ShieldAlert size={48} className="text-amber-600 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-amber-900 mb-2">
-            {!userProfile.is_verified ? "Profile Verification Required" : "Donor Access Restricted"}
-          </h2>
+          <h2 className="text-2xl font-bold text-amber-900 mb-2">Donor Access Restricted</h2>
           <p className="text-amber-700 mb-6 max-w-lg mx-auto">
-            {!userProfile.is_verified
-              ? "To ensure surplus food safety and traceable donations, donors must complete onboarding."
-              : "Your current account is registered under a different role. Please switch or complete donor onboarding."}
+            Your current account is registered under a different role. Complete onboarding with the role you intend to use.
           </p>
           <Link
             href="/onboarding"
             className="inline-flex items-center gap-2 px-6 py-3 bg-brand-gold text-brand-charcoal font-bold rounded-xl hover:bg-yellow-500 transition-colors shadow-sm"
           >
-            Complete Onboarding & Verification
+            Review Onboarding
           </Link>
         </div>
       </div>

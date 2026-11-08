@@ -67,7 +67,7 @@ export default function RequesterDashboard() {
       } else {
         const { data: profile } = await supabase
           .from("profiles")
-          .select("id, role, is_verified, display_name, phone")
+          .select("id, role, display_name, phone")
           .eq("id", user.id)
           .maybeSingle();
         setUserProfile(profile);
@@ -233,7 +233,7 @@ export default function RequesterDashboard() {
         } else if (res.status === 410) {
           setErrorMessage("This listing has expired and cannot be claimed.");
         } else if (res.status === 403) {
-          setErrorMessage("Unauthorized: Requester must be verified to claim food.");
+          setErrorMessage("This account does not have permission to claim this food listing.");
         } else {
           setErrorMessage(result.error?.message || "Failed to claim listing. Please try again.");
         }
@@ -262,25 +262,21 @@ export default function RequesterDashboard() {
     return true;
   });
 
-  // Unverified or wrong role state
-  if (!isLoading && userProfile && (!userProfile.is_verified || userProfile.role !== "requester")) {
+  // Preserve canonical role isolation without treating account verification as an access gate.
+  if (!isLoading && userProfile && userProfile.role !== "requester") {
     return (
       <div className="max-w-4xl mx-auto px-4 py-16">
         <div className="bg-amber-50 border border-amber-200 rounded-2xl p-8 text-center">
           <ShieldAlert size={48} className="text-amber-600 mx-auto mb-4" />
-          <h2 className="text-2xl font-bold text-amber-900 mb-2">
-            {!userProfile.is_verified ? "Profile Verification Required" : "Requester Access Restricted"}
-          </h2>
+          <h2 className="text-2xl font-bold text-amber-900 mb-2">Requester Access Restricted</h2>
           <p className="text-amber-700 mb-6 max-w-lg mx-auto">
-            {!userProfile.is_verified
-              ? "To ensure community food security and prevent duplicate claims, requesters must complete onboarding."
-              : "Your account is registered under a different role. Please switch or complete requester onboarding."}
+            Your account is registered under a different role. Complete onboarding with the role you intend to use.
           </p>
           <Link
             href="/onboarding"
             className="inline-flex items-center gap-2 px-6 py-3 bg-brand-gold text-brand-charcoal font-bold rounded-xl hover:bg-yellow-500 transition-colors shadow-sm"
           >
-            Complete Onboarding & Verification
+            Review Onboarding
           </Link>
         </div>
       </div>
