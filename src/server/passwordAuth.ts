@@ -121,11 +121,18 @@ export async function signUpWithPassword(
 
   const serverClient = customClient || (await createServerSupabaseClient());
 
+  const appUrl = (
+    process.env.NEXT_PUBLIC_APP_URL || "https://annapurna-steel.vercel.app"
+  ).replace(/\/+$/, "");
+
   // Note: user_metadata is intentionally omitted or neutral.
   // The authoritative canonical role is strictly recorded in public.profiles during onboarding.
   const { data: authData, error: authError } = await serverClient.auth.signUp({
     email: normalizedEmail,
     password: input.password,
+    options: {
+      emailRedirectTo: `${appUrl}/auth/callback?role=${input.role}`,
+    },
   });
 
   if (authError) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   Mail,
@@ -46,6 +46,19 @@ export function PasswordLoginForm({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const queryError = params.get("error");
+      if (queryError) {
+        if (queryError.toLowerCase().includes("expired") || queryError.toLowerCase().includes("invalid")) {
+          setError("Your verification link has expired or was already used. You can sign in directly with your email and password below.");
+        } else {
+          setError(queryError);
+        }
+      }
+    }
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
