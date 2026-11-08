@@ -676,25 +676,67 @@ export async function getAdminStats(
   await assertAdminRole(adminId, customClient);
   const supabase = customClient || getServiceRoleClient();
 
+  const startOfToday = new Date();
+  startOfToday.setUTCHours(0, 0, 0, 0);
+  const startOfTodayIso = startOfToday.toISOString();
+
+  const inProgressStates = [
+    'assigned',
+    'at_pickup',
+    'qc_passed',
+    'collected',
+    'en_route_dropoff',
+    'handed_over',
+  ];
+
+  let completedTodayQuery = supabase
+    .from('deliveries')
+    .select('*', { count: 'exact', head: true })
+    .eq('status', 'receipt_confirmed');
+
+  if (typeof (completedTodayQuery as any).gte === 'function') {
+    completedTodayQuery = (completedTodayQuery as any).gte('updated_at', startOfTodayIso);
+  }
+
   const [
     usersRes,
     donorsRes,
     requestersRes,
     volunteersRes,
     activeListingsRes,
+    awaitingVolRes,
+    inProgressRes,
+    completedTodayRes,
     completedDelivRes,
-    pendingDelivRes,
     unreadMsgRes,
+    recentEventsRes,
   ] = await Promise.all([
     supabase.from('profiles').select('*', { count: 'exact', head: true }),
     supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'donor'),
     supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'requester'),
     supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('role', 'volunteer'),
     supabase.from('food_listings').select('*', { count: 'exact', head: true }).in('status', ['published', 'claimed', 'in_delivery']),
+    supabase.from('deliveries').select('*', { count: 'exact', head: true }).eq('status', 'awaiting_volunteer'),
+    supabase.from('deliveries').select('*', { count: 'exact', head: true }).in('status', inProgressStates),
+    completedTodayQuery,
     supabase.from('deliveries').select('*', { count: 'exact', head: true }).eq('status', 'receipt_confirmed'),
-    supabase.from('deliveries').select('*', { count: 'exact', head: true }).in('status', ['awaiting_volunteer', 'assigned', 'at_pickup', 'qc_passed', 'collected', 'en_route_dropoff', 'handed_over']),
     supabase.from('contact_messages').select('*', { count: 'exact', head: true }).eq('status', 'unread'),
+    supabase.from('delivery_events').select('id, delivery_id, actor_role, from_status, to_status, created_at').order('created_at', { ascending: false }).limit(6),
   ]);
+
+  const awaitingVol = awaitingVolRes.count || 0;
+  const inProgress = inProgressRes.count || 0;
+  const totalCompleted = completedDelivRes.count || 0;
+
+  const rawEvents = Array.isArray(recentEventsRes?.data) ? recentEventsRes.data : [];
+  const recentActivity = rawEvents.map((ev: any) => ({
+    id: ev.id,
+    type: 'delivery' as const,
+    title: `Delivery ${ev.to_status ? ev.to_status.replace(/_/g, ' ') : 'Update'}`,
+    status: ev.to_status || 'updated',
+    timestamp: ev.created_at || new Date().toISOString(),
+    summary: `Status updated to ${ev.to_status || 'in progress'} by ${ev.actor_role || 'volunteer'}`,
+  }));
 
   return {
     totalUsers: usersRes.count || 0,
@@ -702,9 +744,15 @@ export async function getAdminStats(
     totalRequesters: requestersRes.count || 0,
     totalVolunteers: volunteersRes.count || 0,
     activeListings: activeListingsRes.count || 0,
-    completedDeliveries: completedDelivRes.count || 0,
-    pendingDeliveries: pendingDelivRes.count || 0,
+    deliveriesAwaitingVolunteer: awaitingVol,
+    deliveriesInProgress: inProgress,
+    deliveriesCompletedToday: completedTodayRes.count || 0,
+    totalCompletedDeliveries: totalCompleted,
+    completedDeliveries: totalCompleted,
+    pendingDeliveries: awaitingVol + inProgress,
     unreadMessages: unMsgCountSafe(unreadMsgRes),
+    recentActivity,
+    lastUpdated: new Date().toISOString(),
   };
 }
 

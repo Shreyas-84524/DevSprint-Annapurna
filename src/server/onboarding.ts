@@ -100,7 +100,7 @@ export async function createCanonicalProfile(
 
   const trimmedLabel = label?.trim() || 'Default Location';
 
-  // 4. Determine verification status: With passwordless email OTP, all onboarded users are verified
+  // 4. Determine verification status: With verified email authentication, all onboarded users are verified
 
   // 5. Perform the entire write through one privileged database transaction.
   const vehicleType = input.volunteerPreferences?.vehicleType || 'motorcycle';

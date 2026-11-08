@@ -106,7 +106,7 @@ export interface MeResponseData {
   dashboardRoute: string;
 }
 
-// 7. Swift SMS OTP Verification Contracts
+// 7. Legacy Verification Contracts (Deprecated)
 export interface SendCodeRequest {
   phone: string;
 }
@@ -666,13 +666,83 @@ export interface CreateGalleryItemRequest {
   imageUrl: string;
 }
 
+export interface RecentActivityItemDTO {
+  id: string;
+  type: 'delivery' | 'listing' | 'claim';
+  title: string;
+  status: string;
+  timestamp: string;
+  summary: string;
+}
+
 export interface AdminStatsDTO {
   totalUsers: number;
   totalDonors: number;
   totalRequesters: number;
   totalVolunteers: number;
   activeListings: number;
+  deliveriesAwaitingVolunteer?: number;
+  deliveriesInProgress?: number;
+  deliveriesCompletedToday?: number;
+  totalCompletedDeliveries?: number;
   completedDeliveries: number;
   pendingDeliveries: number;
   unreadMessages: number;
+  recentActivity?: RecentActivityItemDTO[];
+  lastUpdated?: string;
+}
+
+// 15. Authentication Contracts (Email & Password)
+export interface AuthUserDTO {
+  id: string;
+  email: string;
+}
+
+export interface SignupRequest {
+  email: string;
+  password: string;
+  role: OnboardingRole;
+}
+
+export interface SignupResponseData {
+  user: AuthUserDTO;
+  session: boolean;
+  emailConfirmationRequired: boolean;
+  redirectUrl: string;
+}
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+  portalRole?: UserRole;
+}
+
+export interface LoginResponseData {
+  user: AuthUserDTO;
+  profile: {
+    id: string;
+    role: UserRole;
+    isVerified: boolean;
+    displayName: string | null;
+  } | null;
+  redirectUrl: string;
+  roleMismatch: boolean;
+  canonicalRole?: UserRole;
+}
+
+export interface ForgotPasswordRequest {
+  email: string;
+}
+
+export interface ForgotPasswordResponseData {
+  message: string;
+}
+
+export interface UpdatePasswordRequest {
+  password: string;
+}
+
+export interface UpdatePasswordResponseData {
+  success: boolean;
+  redirectUrl: string;
 }
