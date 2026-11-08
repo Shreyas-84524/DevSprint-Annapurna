@@ -12,7 +12,7 @@ The installed Next.js 16.2.4 documentation was consulted. Route Handlers are pub
 
 ## Trust model
 
-Browser clients are untrusted. They may request actions but may not set role, verification state, claim owner, assigned volunteer, workflow status, earnings, or administrative fields. RLS remains defense in depth; atomic database functions enforce cross-row invariants.
+Browser clients are untrusted. They may request actions but may not set role, claim owner, assigned volunteer, workflow status, earnings, or administrative fields. RLS remains defense in depth; atomic database functions enforce cross-row invariants.
 
 Public listing DTOs exclude exact pickup details. Exact pickup information becomes available only to the assigned volunteer during an allowed delivery state. Requester delivery details and volunteer tracking are restricted to the requester, assigned volunteer, relevant donor where required, and admins with an audited operational need.
 
@@ -25,9 +25,9 @@ Public listing DTOs exclude exact pickup details. Exact pickup information becom
 5. `supabase`: reproducible migrations, seed data, RLS, storage policies, triggers, and transactional functions.
 6. `src/types/contracts.ts`: backend-owned shared request/response/status definitions consumed by frontend.
 
-## Authentication and verification
+## Authentication and authorization
 
-Supabase Auth establishes the account session with email and password. A server-side onboarding operation writes the canonical role once upon base location setup. Completed profiles are verified according to the configured email and onboarding policy. Session cookies are maintained through `@supabase/ssr`; post-login navigation performs a validated document request so newly committed cookies are visible to route protection. Password recovery uses the configured Supabase recovery-email flow. Admin bootstrap is out-of-band and documented; public clients cannot select or grant admin.
+Supabase Auth establishes the account session with email and password. A server-side onboarding operation writes the canonical role once upon base location setup. No separate account/profile verification flag is required for dashboard access, listing publication, or claims. Authorization continues to enforce the authenticated account, canonical role, resource ownership, workflow state, and required operational profile/location data close to the data source. Session cookies are maintained through `@supabase/ssr`; post-login navigation performs a validated document request so newly committed cookies are visible to route protection. Password recovery uses the configured Supabase recovery-email flow. Admin bootstrap is out-of-band and documented; public clients cannot select or grant admin.
 
 ## Workflow architecture
 

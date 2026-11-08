@@ -11,7 +11,7 @@ Status: contract-level proposal; backend worker must validate against current Su
 | Entity | Purpose | Important invariants |
 |---|---|---|
 | `profiles` | One application profile per Auth user | One immutable MVP role; no client role updates |
-| `verification_records` | Trusted donor/requester verification evidence | Distinct from food QC; privileged writes only; no OTP storage |
+| `verification_records` | Legacy verification evidence retained only for compatibility/audit | Never gates dashboard or workflow access; distinct from food QC; no OTP storage |
 | `saved_locations` | User-owned labelled map pins | Exact coordinates visible only to owner and authorized workflow participants |
 | `volunteer_preferences` | Availability and delivery preferences | No manual approval flag |
 | `food_listings` | Public-safe listing state | One donor; positive quantity display; expiry enforced server-side |

@@ -1,7 +1,7 @@
 # Annapurna Product Requirements
 
 Status: authoritative active PRD
-Updated: 2026-10-28
+Updated: 2026-11-08
 
 ## Product statement
 
@@ -31,7 +31,8 @@ Is created only through a secure bootstrap process. Admin manages retained CMS a
 
 - One role per account.
 - Donor/requester sessions use Supabase email/password authentication. Canonical role and onboarding state are resolved server-side and cannot be changed by choosing a different login portal.
-- Verification and role mutations are privileged operations with audit records.
+- A separate account/profile verification flag does not gate donor or requester dashboards, listing publication, or claims. Authentication, canonical role, ownership, workflow state, and required location data remain enforced.
+- Canonical role mutations and other privileged account changes require trusted server-side operations with audit records.
 - Location entry supports map pin, manual correction, browser location permission, denial, and retry.
 
 ### Listings and discovery

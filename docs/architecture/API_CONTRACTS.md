@@ -8,7 +8,7 @@ Status: Stage 1 contract baseline. Contract changes require Codex review; backen
 - Mutation requests require authenticated Supabase sessions. Authorization is rechecked on the server and in the database.
 - Retryable commands accept `Idempotency-Key`; replay returns the original logical result.
 - Validation errors are `400`, unauthenticated `401`, unauthorized `403`, not found `404`, transition/concurrency conflicts `409`, expired resources `410`, rate limits `429`, and dependency failures `502`/`503`.
-- Clients never send trusted role, verification, owner, assignee, or transition-state fields.
+- Clients never send trusted role, owner, assignee, or transition-state fields.
 - Coordinates are WGS84 decimal latitude/longitude. Timestamps are UTC ISO 8601.
 
 ## Identity and onboarding
@@ -21,7 +21,7 @@ Status: Stage 1 contract baseline. Contract changes require Codex review; backen
 | `POST /api/auth/update-password` | `{ password }` | Updates the password for an authenticated recovery session |
 | `POST /api/auth/logout` | none | Signs out Supabase session and clears HTTP-only auth cookies |
 | `POST /api/onboarding/profile` | `{ role: donor\|requester\|volunteer, displayName, location }` | Creates the one-time canonical profile with base location; rejects `admin` |
-| `GET /api/me` | none | Minimal role, verification, onboarding, and dashboard-routing DTO |
+| `GET /api/me` | none | Minimal canonical role, onboarding, and dashboard-routing DTO; any legacy verification field is informational and never gates access |
 | `PUT /api/me/locations/:id` | Label and map pin | Upserts only the caller's location |
 
 Email/password authentication is managed by Supabase Auth. Session cookies are written by the server boundary through `@supabase/ssr`. After login the browser performs a validated full-document navigation to the canonical role destination so the protected request observes the committed cookie and cannot reuse a stale unauthenticated App Router response. Role selection in the browser never changes the canonical profile role.
@@ -32,7 +32,7 @@ Email/password authentication is managed by Supabase Auth. Session cookies are w
 |---|---|---|
 | `POST /api/listings` | Description, food metadata, expiry, saved pickup location ID, optional prepared image token | Donor-owned draft or published listing |
 | `PATCH /api/listings/:id` | Allowed donor-editable fields with version | Updated listing or `409` if no longer editable |
-| `POST /api/listings/:id/publish` | Idempotent command | Published listing after donor verification and validation |
+| `POST /api/listings/:id/publish` | Idempotent command | Published listing after authenticated donor authorization and listing validation |
 | `GET /api/listings/nearby?lat=&lng=&radius=&cursor=` | Discovery query | Public-safe summaries; never exact pickup details |
 | `POST /api/listings/:id/claim` | `{ deliveryLocationId }` plus idempotency key | Atomically creates active claim and awaiting delivery, or `409/410` |
 
@@ -51,7 +51,7 @@ Email/password authentication is managed by Supabase Auth. Session cookies are w
 | `POST /api/deliveries/:id/cancel` | `{ reasonCode, note? }` | Allowed actor/state cancellation with recovery result |
 | `GET /api/deliveries/:id` | none | Participant-filtered canonical state and allowed next actions |
 
-Every transition checks actor, current state, ownership/assignment, verification where required, idempotency, and row version inside one transaction.
+Every transition checks actor, canonical role, current state, ownership/assignment, idempotency, and row version inside one transaction. Account/profile verification status is not an authorization condition.
 
 ## Tracking and routing
 
