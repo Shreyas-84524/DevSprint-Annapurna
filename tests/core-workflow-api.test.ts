@@ -5,6 +5,7 @@ import {
   updateListing,
   publishListing,
   getNearbyListings,
+  getDonorListings,
   claimListing,
 } from '../src/server/listings';
 import {
@@ -13,7 +14,10 @@ import {
   getDeliveryDetail,
   DeliveryWorkflowError,
 } from '../src/server/deliveries';
-import { POST as createListingHandler } from '../src/app/api/listings/route';
+import {
+  GET as donorListingsHandler,
+  POST as createListingHandler,
+} from '../src/app/api/listings/route';
 import { PATCH as updateListingHandler } from '../src/app/api/listings/[id]/route';
 import { POST as publishListingHandler } from '../src/app/api/listings/[id]/publish/route';
 import { GET as nearbyListingsHandler } from '../src/app/api/listings/nearby/route';
@@ -707,6 +711,113 @@ describe('Core Food Workflow API & DAL Suite', () => {
       assert.equal(res.status, 401);
       const json = await res.json();
       assert.equal(json.error.code, 'UNAUTHORIZED');
+    });
+
+    it('returns only donor-owned listings in newest-first order', async () => {
+      const older = await createListing(
+        'donor-001',
+        {
+          title: 'Older Donor Listing',
+          quantity: 5,
+          unit: 'packs',
+          foodType: 'veg',
+          expiresAt: new Date(Date.now() + 3600000).toISOString(),
+          pickupLocationId: 'loc-donor-1',
+        },
+        db
+      );
+      const other = await createListing(
+        'donor-unverified',
+        {
+          title: 'Other Donor Listing',
+          quantity: 4,
+          unit: 'packs',
+          foodType: 'veg',
+          expiresAt: new Date(Date.now() + 3600000).toISOString(),
+          pickupLocationId: 'loc-donor-unverified',
+        },
+        db
+      );
+      db.foodListings.get(older.id).created_at = '2026-11-08T01:00:00.000Z';
+      db.foodListings.get(other.id).created_at = '2026-11-08T03:00:00.000Z';
+      const newer = await createListing(
+        'donor-001',
+        {
+          title: 'Newer Donor Listing',
+          quantity: 6,
+          unit: 'packs',
+          foodType: 'veg',
+          expiresAt: new Date(Date.now() + 3600000).toISOString(),
+          pickupLocationId: 'loc-donor-1',
+        },
+        db
+      );
+      db.foodListings.get(newer.id).created_at = '2026-11-08T02:00:00.000Z';
+
+      const listings = await getDonorListings('donor-001', db);
+
+      assert.deepEqual(listings.map((listing) => listing.id), [newer.id, older.id]);
+      assert.equal(listings.some((listing) => listing.id === other.id), false);
+    });
+
+    it('GET /api/listings?mine=true returns the authenticated donor listings', async () => {
+      await createListing(
+        'donor-001',
+        {
+          title: 'Dashboard Listing',
+          quantity: 8,
+          unit: 'boxes',
+          foodType: 'veg',
+          expiresAt: new Date(Date.now() + 3600000).toISOString(),
+          pickupLocationId: 'loc-donor-1',
+        },
+        db
+      );
+
+      const response = await donorListingsHandler(
+        new Request('http://localhost:3000/api/listings?mine=true'),
+        { caller: { id: 'donor-001', role: 'donor' }, customClient: db }
+      );
+      const payload = await response.json();
+
+      assert.equal(response.status, 200);
+      assert.equal(payload.data.length, 1);
+      assert.equal(payload.data[0].title, 'Dashboard Listing');
+      assert.equal(payload.error, null);
+      assert.equal(response.headers.get('cache-control'), 'private, no-store');
+    });
+
+    it('GET /api/listings?mine=true rejects a non-donor canonical role', async () => {
+      const response = await donorListingsHandler(
+        new Request('http://localhost:3000/api/listings?mine=true'),
+        { caller: { id: 'requester-001', role: 'requester' }, customClient: db }
+      );
+      const payload = await response.json();
+
+      assert.equal(response.status, 403);
+      assert.equal(payload.error.code, 'FORBIDDEN_ROLE');
+    });
+
+    it('GET /api/listings?mine=true rejects an unauthenticated request', async () => {
+      const response = await donorListingsHandler(
+        new Request('http://localhost:3000/api/listings?mine=true'),
+        { caller: null, customClient: db }
+      );
+      const payload = await response.json();
+
+      assert.equal(response.status, 401);
+      assert.equal(payload.error.code, 'UNAUTHORIZED');
+    });
+
+    it('GET /api/listings requires the explicit mine query', async () => {
+      const response = await donorListingsHandler(
+        new Request('http://localhost:3000/api/listings'),
+        { caller: { id: 'donor-001', role: 'donor' }, customClient: db }
+      );
+      const payload = await response.json();
+
+      assert.equal(response.status, 400);
+      assert.equal(payload.error.code, 'MINE_REQUIRED');
     });
   });
 

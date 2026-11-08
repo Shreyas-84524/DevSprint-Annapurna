@@ -268,6 +268,28 @@ describe('Core Food Workflow Database & Contract Suite', () => {
       assert.match(content, /canonical requester/i);
       assert.doesNotMatch(content, /DROP\s+(?:TABLE|POLICY|FUNCTION)/i);
     });
+
+    it('replaces recursive listing and claim policies with private participant helpers', () => {
+      const rlsMigrationPath = path.resolve(
+        __dirname,
+        '../supabase/migrations/20261108185711_fix_food_workflow_rls_recursion.sql'
+      );
+      const content = fs.readFileSync(rlsMigrationPath, 'utf8');
+
+      assert.match(content, /FUNCTION\s+internal\.can_read_food_listing\s*\(p_listing_id uuid\)/i);
+      assert.match(content, /FUNCTION\s+internal\.can_read_claim\s*\(p_claim_id uuid\)/i);
+      assert.match(content, /SECURITY\s+DEFINER[\s\S]*SET\s+search_path\s*=\s*''/i);
+      assert.match(content, /\(SELECT auth\.uid\(\)\) IS NOT NULL/i);
+      assert.match(content, /REVOKE\s+ALL[\s\S]*FROM PUBLIC, anon, authenticated, service_role/i);
+      assert.match(content, /GRANT\s+EXECUTE[\s\S]*TO authenticated/i);
+      assert.match(content, /DROP POLICY IF EXISTS "food_listings_select_claimed"/i);
+      assert.match(content, /USING\s*\(\(SELECT internal\.can_read_food_listing\(food_listings\.id\)\)\)/i);
+      assert.match(content, /USING\s*\(\(SELECT internal\.can_read_claim\(claims\.id\)\)\)/i);
+
+      const insertPolicy = content.slice(content.indexOf('CREATE POLICY "food_listings_insert_donor"'));
+      assert.match(insertPolicy, /internal\.has_canonical_role\('donor'\)/i);
+      assert.doesNotMatch(insertPolicy, /is_verified/i);
+    });
   });
 
   describe('5. pgTAP Test Suite Validation', () => {
@@ -283,6 +305,24 @@ describe('Core Food Workflow Database & Contract Suite', () => {
       const assertions = content.match(/^SELECT\s+(?:has_table|ok|is_empty|results_eq|has_index|throws_ok|is)\s*\(/gim) || [];
       assert.equal(assertions.length, 39);
       assert.match(content, /SELECT\s+\*\s+FROM\s+finish\(\);/i);
+      assert.match(content, /ROLLBACK;/i);
+    });
+
+    it('includes executable regression coverage for the RLS recursion path', () => {
+      const recursionTestPath = path.resolve(
+        __dirname,
+        '../supabase/tests/food_workflow_rls_recursion_test.sql'
+      );
+      const content = fs.readFileSync(recursionTestPath, 'utf8');
+      const assertions = content.match(
+        /^SELECT\s+(?:has_function|ok|is_empty|results_eq|lives_ok)\s*\(/gim
+      ) || [];
+
+      assert.match(content, /SELECT\s+plan\(12\);/i);
+      assert.equal(assertions.length, 12);
+      assert.match(content, /SET LOCAL ROLE authenticated;/i);
+      assert.match(content, /request\.jwt\.claim\.sub/i);
+      assert.match(content, /legacy is_verified status/i);
       assert.match(content, /ROLLBACK;/i);
     });
   });

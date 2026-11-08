@@ -42,6 +42,55 @@ function calculateHaversineDistanceKm(lat1: number, lon1: number, lat2: number, 
   return R * c;
 }
 
+function toListingDTO(listing: any): ListingDTO {
+  return {
+    id: listing.id,
+    donorId: listing.donor_id,
+    title: listing.title,
+    description: listing.description,
+    quantity: Number(listing.quantity),
+    unit: listing.unit,
+    foodType: listing.food_type as FoodType,
+    dietaryTags: listing.dietary_tags || [],
+    status: listing.status as ListingStatus,
+    expiresAt: listing.expires_at,
+    pickupLocationId: listing.pickup_location_id,
+    generalArea: listing.general_area,
+    rowVersion: listing.row_version,
+    createdAt: listing.created_at,
+    updatedAt: listing.updated_at,
+  };
+}
+
+/**
+ * Returns only listings owned by the authenticated canonical donor.
+ * The server-side privileged client avoids exposing direct browser table reads,
+ * while the donor filter remains mandatory at the data source.
+ */
+export async function getDonorListings(
+  donorId: string,
+  customClient?: any
+): Promise<ListingDTO[]> {
+  const supabase = customClient || getServiceRoleClient();
+  const { data, error } = await supabase
+    .from('food_listings')
+    .select(
+      'id, donor_id, title, description, quantity, unit, food_type, dietary_tags, status, expires_at, pickup_location_id, general_area, row_version, created_at, updated_at'
+    )
+    .eq('donor_id', donorId)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    throw new ListingWorkflowError(
+      'Unable to load donor listings.',
+      'LISTINGS_FETCH_FAILED',
+      500
+    );
+  }
+
+  return (data || []).map(toListingDTO);
+}
+
 /**
  * Creates a new donor-owned food listing (draft or immediately published).
  * Enforces the canonical donor role, validates fields, and records pickup details.
