@@ -31,6 +31,7 @@ Email/password authentication is managed by Supabase Auth. Session cookies are w
 | Method and path | Request | Result |
 |---|---|---|
 | `POST /api/listings` | Description, food metadata, expiry, saved pickup location ID, optional prepared image token | Donor-owned draft or published listing |
+| `GET /api/listings?mine=true` | Authenticated donor session | Newest-first `ListingDTO[]` containing only the caller's listings; `mine=true` is required |
 | `PATCH /api/listings/:id` | Allowed donor-editable fields with version | Updated listing or `409` if no longer editable |
 | `POST /api/listings/:id/publish` | Idempotent command | Published listing after authenticated donor authorization and listing validation |
 | `GET /api/listings/nearby?lat=&lng=&radius=&cursor=` | Discovery query | Public-safe summaries; never exact pickup details |
