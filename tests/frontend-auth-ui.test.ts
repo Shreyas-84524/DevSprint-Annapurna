@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { OnboardingRole, UserRole, AdminStatsDTO } from '../src/types/contracts';
+import { resolvePostAuthDestination } from '../src/components/auth/authNavigation';
 
 /**
  * Frontend Auth UI and Admin Operations State Suite
@@ -119,6 +120,21 @@ describe('Frontend Auth UI & Admin Operations Suite', () => {
   });
 
   describe('2. Client API Response & Redirection Mapping', () => {
+    it('allows only known local post-authentication destinations', () => {
+      assert.equal(resolvePostAuthDestination('/dashboard/donor'), '/dashboard/donor');
+      assert.equal(resolvePostAuthDestination('/dashboard/beneficiary'), '/dashboard/beneficiary');
+      assert.equal(resolvePostAuthDestination('/dashboard/volunteer'), '/dashboard/volunteer');
+      assert.equal(resolvePostAuthDestination('/admin'), '/admin');
+      assert.equal(resolvePostAuthDestination('/onboarding'), '/onboarding');
+    });
+
+    it('fails closed for missing, external, or script post-authentication destinations', () => {
+      assert.equal(resolvePostAuthDestination(undefined), '/onboarding');
+      assert.equal(resolvePostAuthDestination('https://attacker.example'), '/onboarding');
+      assert.equal(resolvePostAuthDestination('javascript:alert(1)'), '/onboarding');
+      assert.equal(resolvePostAuthDestination('/dashboard/donor?unexpected=1'), '/onboarding');
+    });
+
     it('maps successful login responses to the appropriate role dashboard', () => {
       const resolveClientRedirect = (data: {
         redirectUrl: string;

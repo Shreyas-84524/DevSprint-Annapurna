@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import {
   Mail,
   Lock,
@@ -15,6 +14,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { UserRole } from "@/types/contracts";
+import { resolvePostAuthDestination } from "@/components/auth/authNavigation";
 
 export interface PasswordLoginFormProps {
   portalRole: UserRole;
@@ -37,8 +37,6 @@ export function PasswordLoginForm({
   icon,
   backHref = "/login",
 }: PasswordLoginFormProps) {
-  const router = useRouter();
-
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -103,10 +101,16 @@ export function PasswordLoginForm({
         );
       }
 
-      const redirectDestination = json.data?.redirectUrl || "/onboarding";
-      setTimeout(() => {
-        router.push(redirectDestination);
-      }, json.data?.roleMismatch ? 1200 : 300);
+      const redirectDestination = resolvePostAuthDestination(json.data?.redirectUrl);
+
+      // Authentication is completed by a Route Handler that writes the SSR
+      // session cookie. A document navigation guarantees the subsequent
+      // protected request is made after the browser has committed Set-Cookie,
+      // and avoids a stale prefetched App Router response from the login page.
+      await new Promise((resolve) =>
+        window.setTimeout(resolve, json.data?.roleMismatch ? 1200 : 150)
+      );
+      window.location.replace(redirectDestination);
     } catch {
       setError("Network error. Please check your internet connection and try again.");
     } finally {
