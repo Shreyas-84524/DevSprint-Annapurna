@@ -179,7 +179,7 @@ describe('Annapurna — Onboarding & Foundation Suite', () => {
   });
 
   describe('1. Canonical Role Creation & Constraints', () => {
-    it('creates a donor profile requiring OTP verification', async () => {
+    it('creates a donor profile with immediate role-dashboard access', async () => {
       const res = await createCanonicalProfile(
         'user_donor_1',
         'donor@annapurna.test',
@@ -198,13 +198,12 @@ describe('Annapurna — Onboarding & Foundation Suite', () => {
 
       assert.equal(res.profile.displayName, 'Aarav Patel');
       assert.equal(res.profile.role, 'donor');
-      assert.equal(res.profile.isVerified, true, 'Donor is verified upon onboarding');
       assert.equal(res.dashboardRoute, '/dashboard/donor');
       assert.equal(res.location?.label, 'Home Kitchen');
       assert.equal(res.location?.latitude, 19.0596);
     });
 
-    it('creates a requester profile requiring OTP verification', async () => {
+    it('creates a requester profile with immediate role-dashboard access', async () => {
       const res = await createCanonicalProfile(
         'user_req_1',
         'requester@annapurna.test',
@@ -223,11 +222,10 @@ describe('Annapurna — Onboarding & Foundation Suite', () => {
 
       assert.equal(res.profile.displayName, 'Community Shelter');
       assert.equal(res.profile.role, 'requester');
-      assert.equal(res.profile.isVerified, true, 'Requester is verified upon onboarding');
       assert.equal(res.dashboardRoute, '/dashboard/beneficiary');
     });
 
-    it('creates a volunteer profile without requiring OTP verification', async () => {
+    it('creates a volunteer profile with immediate role-dashboard access', async () => {
       const res = await createCanonicalProfile(
         'user_vol_1',
         'volunteer@annapurna.test',
@@ -249,7 +247,6 @@ describe('Annapurna — Onboarding & Foundation Suite', () => {
 
       assert.equal(res.profile.displayName, 'Vikram Singh');
       assert.equal(res.profile.role, 'volunteer');
-      assert.equal(res.profile.isVerified, true, 'Volunteers are verified upon onboarding');
       assert.equal(res.dashboardRoute, '/dashboard/volunteer');
       assert.equal(res.volunteerPreferences?.vehicleType, 'motorcycle');
       assert.equal(res.volunteerPreferences?.maxDistanceKm, 15);
@@ -404,7 +401,7 @@ describe('Annapurna — Onboarding & Foundation Suite', () => {
       assert.equal(projection.role, null);
     });
 
-    it('projects unverified donor to /onboarding', async () => {
+    it('projects a canonical donor to its dashboard regardless of legacy verification status', async () => {
       mockDb.profiles.set('donor_unverified', {
         id: 'donor_unverified',
         display_name: 'Pooja Donor',
@@ -413,8 +410,8 @@ describe('Annapurna — Onboarding & Foundation Suite', () => {
       });
 
       const projection = await getCurrentUserProjection('donor_unverified', 'pooja@test.com', mockDb);
-      assert.equal(projection.onboardingComplete, false);
-      assert.equal(projection.dashboardRoute, '/onboarding');
+      assert.equal(projection.onboardingComplete, true);
+      assert.equal(projection.dashboardRoute, '/dashboard/donor');
     });
 
     it('projects verified donor to /dashboard/donor', async () => {
@@ -544,7 +541,7 @@ describe('Annapurna — Onboarding & Foundation Suite', () => {
   });
 
   describe('4. Full Onboarding Workflow', () => {
-    it('executes donor creation and grants verified access to donor dashboard', async () => {
+    it('executes donor creation and grants canonical role access to donor dashboard', async () => {
       // 1. Create donor profile with required location
       const onboardRes = await createCanonicalProfile(
         'user_lifecycle_1',
@@ -560,12 +557,10 @@ describe('Annapurna — Onboarding & Foundation Suite', () => {
         },
         mockDb
       );
-      assert.equal(onboardRes.profile.isVerified, true);
       assert.equal(onboardRes.dashboardRoute, '/dashboard/donor');
 
       // 2. Query /api/me projection
       const projection = await getCurrentUserProjection('user_lifecycle_1', 'donor@test.com', mockDb);
-      assert.equal(projection.isVerified, true);
       assert.equal(projection.onboardingComplete, true);
       assert.equal(projection.dashboardRoute, '/dashboard/donor');
     });

@@ -44,7 +44,7 @@ function calculateHaversineDistanceKm(lat1: number, lon1: number, lat2: number, 
 
 /**
  * Creates a new donor-owned food listing (draft or immediately published).
- * Enforces donor role and phone verification, validates fields, and records pickup details.
+ * Enforces the canonical donor role, validates fields, and records pickup details.
  */
 export async function createListing(
   donorId: string,
@@ -53,10 +53,10 @@ export async function createListing(
 ): Promise<ListingDTO> {
   const supabase = customClient || getServiceRoleClient();
 
-  // 1. Enforce verified donor role
+  // 1. Enforce canonical donor role
   const { data: profile, error: profileErr } = await supabase
     .from('profiles')
-    .select('id, role, is_verified, phone')
+    .select('id, role, phone')
     .eq('id', donorId)
     .maybeSingle();
 
@@ -66,14 +66,6 @@ export async function createListing(
 
   if (profile.role !== 'donor') {
     throw new ListingWorkflowError('Only donors can create food listings.', 'FORBIDDEN_ROLE', 403);
-  }
-
-  if (!profile.is_verified) {
-    throw new ListingWorkflowError(
-      'Donor must be phone-verified before creating food listings.',
-      'DONOR_NOT_VERIFIED',
-      403
-    );
   }
 
   // 2. Validate input fields
@@ -716,10 +708,10 @@ export async function claimListing(
 ): Promise<ClaimResponseDTO> {
   const supabase = customClient || getServiceRoleClient();
 
-  // 1. Verify requester role and phone verification
+  // 1. Verify the canonical requester role
   const { data: requester, error: reqErr } = await supabase
     .from('profiles')
-    .select('id, role, is_verified')
+    .select('id, role')
     .eq('id', requesterId)
     .maybeSingle();
 
@@ -729,14 +721,6 @@ export async function claimListing(
 
   if (requester.role !== 'requester') {
     throw new ListingWorkflowError('Only requesters can claim food listings.', 'UNAUTHORIZED_REQUESTER', 403);
-  }
-
-  if (!requester.is_verified) {
-    throw new ListingWorkflowError(
-      'Requester must be phone-verified before claiming food listings.',
-      'REQUESTER_NOT_VERIFIED',
-      403
-    );
   }
 
   // 2. Invoke atomic stored procedure
@@ -796,7 +780,7 @@ export async function claimListing(
         supabase
       );
     }
-  } catch (_err) {
+  } catch {
     // Non-fatal notification failure
   }
 

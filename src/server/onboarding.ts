@@ -100,9 +100,7 @@ export async function createCanonicalProfile(
 
   const trimmedLabel = label?.trim() || 'Default Location';
 
-  // 4. Determine verification status: With verified email authentication, all onboarded users are verified
-
-  // 5. Perform the entire write through one privileged database transaction.
+  // 4. Perform the entire write through one privileged database transaction.
   const vehicleType = input.volunteerPreferences?.vehicleType || 'motorcycle';
   const maxDistanceKm = input.volunteerPreferences?.maxDistanceKm || 10;
 
@@ -165,7 +163,7 @@ export async function createCanonicalProfile(
     };
   }
 
-  // 6. Determine destination dashboard route
+  // 5. Determine destination dashboard route
   let dashboardRoute = '/onboarding';
   if (input.role === 'requester') {
     dashboardRoute = '/dashboard/beneficiary';
@@ -278,21 +276,11 @@ export async function getCurrentUserProjection(
     dashboardRoute = '/dashboard/volunteer';
     onboardingComplete = true;
   } else if (profile.role === 'requester') {
-    if (profile.is_verified) {
-      dashboardRoute = '/dashboard/beneficiary';
-      onboardingComplete = true;
-    } else {
-      dashboardRoute = '/onboarding';
-      onboardingComplete = false;
-    }
+    dashboardRoute = '/dashboard/beneficiary';
+    onboardingComplete = true;
   } else if (profile.role === 'donor') {
-    if (profile.is_verified) {
-      dashboardRoute = '/dashboard/donor';
-      onboardingComplete = true;
-    } else {
-      dashboardRoute = '/onboarding';
-      onboardingComplete = false;
-    }
+    dashboardRoute = '/dashboard/donor';
+    onboardingComplete = true;
   }
 
   return {

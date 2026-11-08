@@ -35,19 +35,6 @@ export async function POST(
       );
     }
 
-    if (!user.isVerified) {
-      return NextResponse.json(
-        {
-          data: null,
-          error: {
-            code: 'DONOR_NOT_VERIFIED',
-            message: 'Donor must be phone-verified before publishing food listings.',
-          },
-        },
-        { status: 403 }
-      );
-    }
-
     // 2. Resolve listing ID
     const { id: listingId } = await context.params;
     if (!listingId) {

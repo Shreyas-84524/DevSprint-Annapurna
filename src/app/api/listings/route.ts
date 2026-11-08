@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getAuthenticatedUser, AuthenticatedUser } from '@/server/auth';
+import { getAuthenticatedUser } from '@/server/auth';
 import { createListing, ListingWorkflowError } from '@/server/listings';
 
 export async function POST(
@@ -22,7 +22,7 @@ export async function POST(
       );
     }
 
-    // 2. Enforce donor role & verification
+    // 2. Enforce canonical donor role
     if (user.role !== 'donor') {
       return NextResponse.json(
         {
@@ -30,19 +30,6 @@ export async function POST(
           error: {
             code: 'FORBIDDEN_ROLE',
             message: 'Only donors can create food listings.',
-          },
-        },
-        { status: 403 }
-      );
-    }
-
-    if (!user.isVerified) {
-      return NextResponse.json(
-        {
-          data: null,
-          error: {
-            code: 'DONOR_NOT_VERIFIED',
-            message: 'Donor must be phone-verified before creating food listings.',
           },
         },
         { status: 403 }

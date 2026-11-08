@@ -35,19 +35,6 @@ export async function POST(
       );
     }
 
-    if (!user.isVerified) {
-      return NextResponse.json(
-        {
-          data: null,
-          error: {
-            code: 'REQUESTER_NOT_VERIFIED',
-            message: 'Requester must be phone-verified before claiming food listings.',
-          },
-        },
-        { status: 403 }
-      );
-    }
-
     // 2. Resolve listing ID
     const { id: listingId } = await context.params;
     if (!listingId) {

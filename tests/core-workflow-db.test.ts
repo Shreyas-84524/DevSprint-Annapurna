@@ -253,6 +253,21 @@ describe('Core Food Workflow Database & Contract Suite', () => {
       assert.match(content, /GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+public\.claim_food_listing/i);
       assert.match(content, /GRANT\s+EXECUTE\s+ON\s+FUNCTION\s+public\.accept_delivery_task/i);
     });
+
+    it('removes legacy profile verification predicates without weakening role authorization', () => {
+      const accessMigrationPath = path.resolve(
+        __dirname,
+        '../supabase/migrations/20261108114130_remove_profile_verification_gate.sql'
+      );
+      const content = fs.readFileSync(accessMigrationPath, 'utf8');
+
+      assert.match(content, /pg_get_functiondef/i);
+      assert.match(content, /OR NOT v_profile\.is_verified/i);
+      assert.match(content, /OR NOT v_requester\.is_verified/i);
+      assert.match(content, /canonical donor/i);
+      assert.match(content, /canonical requester/i);
+      assert.doesNotMatch(content, /DROP\s+(?:TABLE|POLICY|FUNCTION)/i);
+    });
   });
 
   describe('5. pgTAP Test Suite Validation', () => {

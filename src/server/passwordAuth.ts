@@ -258,9 +258,9 @@ export async function signInWithPassword(
     } else if (canonicalRole === "volunteer") {
       redirectUrl = "/dashboard/volunteer";
     } else if (canonicalRole === "donor") {
-      redirectUrl = profile.is_verified ? "/dashboard/donor" : "/onboarding";
+      redirectUrl = "/dashboard/donor";
     } else if (canonicalRole === "requester") {
-      redirectUrl = profile.is_verified ? "/dashboard/beneficiary" : "/onboarding";
+      redirectUrl = "/dashboard/beneficiary";
     }
   }
 

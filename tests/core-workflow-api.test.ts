@@ -6,7 +6,6 @@ import {
   publishListing,
   getNearbyListings,
   claimListing,
-  ListingWorkflowError,
 } from '../src/server/listings';
 import {
   getAvailableVolunteerTasks,
@@ -138,6 +137,20 @@ class MockWorkflowDB {
       created_at: new Date().toISOString(),
     });
 
+    this.savedLocations.set('loc-donor-unverified', {
+      id: 'loc-donor-unverified',
+      user_id: 'donor-unverified',
+      label: 'Secondary Kitchen',
+      address: '101 Marine Drive, Nariman Point',
+      city: 'Mumbai',
+      state: 'Maharashtra',
+      postal_code: '400021',
+      latitude: 18.923,
+      longitude: 72.826,
+      is_default: true,
+      created_at: new Date().toISOString(),
+    });
+
     this.savedLocations.set('loc-requester-1', {
       id: 'loc-requester-1',
       user_id: 'requester-001',
@@ -148,6 +161,20 @@ class MockWorkflowDB {
       postal_code: '400050',
       latitude: 19.0544,
       longitude: 72.8277,
+      is_default: true,
+      created_at: new Date().toISOString(),
+    });
+
+    this.savedLocations.set('loc-requester-unverified', {
+      id: 'loc-requester-unverified',
+      user_id: 'requester-unverified',
+      label: 'Community Hub',
+      address: '43 Hill Road, Bandra West',
+      city: 'Mumbai',
+      state: 'Maharashtra',
+      postal_code: '400050',
+      latitude: 19.055,
+      longitude: 72.828,
       is_default: true,
       created_at: new Date().toISOString(),
     });
@@ -184,7 +211,7 @@ class MockWorkflowDB {
 
       // 2. Requester check
       const requester = this.profiles.get(p_requester_id);
-      if (!requester || requester.role !== 'requester' || !requester.is_verified) {
+      if (!requester || requester.role !== 'requester') {
         return { data: null, error: { code: '42501', message: 'UNAUTHORIZED_REQUESTER' } };
       }
 
@@ -563,28 +590,21 @@ describe('Core Food Workflow API & DAL Suite', () => {
       assert.equal(listing.status, 'published');
     });
 
-    it('rejects listing creation if donor is unverified', async () => {
-      await assert.rejects(
-        async () => {
-          await createListing(
-            'donor-unverified',
-            {
-              title: 'Fresh Bread',
-              quantity: 10,
-              unit: 'loaves',
-              foodType: 'veg',
-              expiresAt: new Date(Date.now() + 3600000).toISOString(),
-            },
-            db
-          );
+    it('allows a canonical donor regardless of legacy verification status', async () => {
+      const listing = await createListing(
+        'donor-unverified',
+        {
+          title: 'Fresh Bread',
+          quantity: 10,
+          unit: 'loaves',
+          foodType: 'veg',
+          expiresAt: new Date(Date.now() + 3600000).toISOString(),
+          pickupLocationId: 'loc-donor-unverified',
         },
-        (err: any) => {
-          assert.equal(err instanceof ListingWorkflowError, true);
-          assert.equal(err.code, 'DONOR_NOT_VERIFIED');
-          assert.equal(err.status, 403);
-          return true;
-        }
+        db
       );
+
+      assert.equal(listing.donorId, 'donor-unverified');
     });
 
     it('rejects listing creation if role is not donor', async () => {
@@ -1112,23 +1132,17 @@ describe('Core Food Workflow API & DAL Suite', () => {
       );
     });
 
-    it('rejects claim from unverified requester (403 Forbidden)', async () => {
-      await assert.rejects(
-        async () => {
-          await claimListing(
-            publishedListingId,
-            'requester-unverified',
-            { deliveryLocationId: 'loc-requester-1' },
-            'key-unv',
-            db
-          );
-        },
-        (err: any) => {
-          assert.equal(err.code, 'REQUESTER_NOT_VERIFIED');
-          assert.equal(err.status, 403);
-          return true;
-        }
+    it('allows a canonical requester regardless of legacy verification status', async () => {
+      const result = await claimListing(
+        publishedListingId,
+        'requester-unverified',
+        { deliveryLocationId: 'loc-requester-unverified' },
+        'key-unverified-requester',
+        db
       );
+
+      assert.equal(result.listingId, publishedListingId);
+      assert.equal(result.status, 'claimed');
     });
 
     it('route handler POST /api/listings/[id]/claim returns 201 on new claim and 200 on retry', async () => {

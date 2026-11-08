@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import {
   CANONICAL_ROLES,
   ONBOARDING_ROLES,
-  OnboardingRole,
   LocationInput,
 } from '../src/types/contracts';
 import { getProtectedRouteRedirect } from '../src/proxy';
@@ -28,14 +27,10 @@ describe('Role-aware onboarding and location fallback suite', () => {
       assert.equal((ONBOARDING_ROLES as readonly string[]).includes('admin'), false);
     });
 
-    it('distinguishes roles requiring external verification from instant access roles', () => {
-      const requiresVerification = (role: OnboardingRole): boolean => {
-        return role === 'donor' || role === 'requester';
-      };
-
-      assert.equal(requiresVerification('donor'), true);
-      assert.equal(requiresVerification('requester'), true);
-      assert.equal(requiresVerification('volunteer'), false);
+    it('does not add an account-verification gate to any self-onboarding role', () => {
+      for (const role of ONBOARDING_ROLES) {
+        assert.equal(['donor', 'requester', 'volunteer'].includes(role), true);
+      }
     });
   });
 
@@ -149,35 +144,31 @@ describe('Role-aware onboarding and location fallback suite', () => {
     });
   });
 
-  describe('Dashboard routing outcomes based on canonical role and verification', () => {
-    it('redirects unverified donor away from donor dashboard to onboarding', () => {
+  describe('Dashboard routing outcomes based on canonical role', () => {
+    it('allows a canonical donor regardless of legacy verification status', () => {
       const route = getProtectedRouteRedirect('/dashboard/donor', {
         role: 'donor',
-        is_verified: false,
-      });
-      assert.equal(route, '/onboarding');
-    });
-
-    it('allows verified donor to access donor dashboard without redirect', () => {
-      const route = getProtectedRouteRedirect('/dashboard/donor', {
-        role: 'donor',
-        is_verified: true,
       });
       assert.equal(route, null);
     });
 
-    it('redirects unverified requester away from beneficiary dashboard to onboarding', () => {
-      const route = getProtectedRouteRedirect('/dashboard/beneficiary', {
-        role: 'requester',
-        is_verified: false,
+    it('allows donor to access donor dashboard without redirect', () => {
+      const route = getProtectedRouteRedirect('/dashboard/donor', {
+        role: 'donor',
       });
-      assert.equal(route, '/onboarding');
+      assert.equal(route, null);
     });
 
-    it('allows verified requester to access beneficiary dashboard without redirect', () => {
+    it('allows a canonical requester regardless of legacy verification status', () => {
       const route = getProtectedRouteRedirect('/dashboard/beneficiary', {
         role: 'requester',
-        is_verified: true,
+      });
+      assert.equal(route, null);
+    });
+
+    it('allows requester to access beneficiary dashboard without redirect', () => {
+      const route = getProtectedRouteRedirect('/dashboard/beneficiary', {
+        role: 'requester',
       });
       assert.equal(route, null);
     });
@@ -185,7 +176,6 @@ describe('Role-aware onboarding and location fallback suite', () => {
     it('allows volunteer to access volunteer dashboard immediately without extra approval gates', () => {
       const route = getProtectedRouteRedirect('/dashboard/volunteer', {
         role: 'volunteer',
-        is_verified: true,
       });
       assert.equal(route, null);
     });
@@ -193,7 +183,6 @@ describe('Role-aware onboarding and location fallback suite', () => {
     it('prevents cross-role access (e.g. donor attempting volunteer dashboard)', () => {
       const route = getProtectedRouteRedirect('/dashboard/volunteer', {
         role: 'donor',
-        is_verified: true,
       });
       assert.equal(route, '/dashboard/donor');
     });
@@ -201,7 +190,6 @@ describe('Role-aware onboarding and location fallback suite', () => {
     it('prevents non-admin user from accessing admin portal', () => {
       const route = getProtectedRouteRedirect('/admin', {
         role: 'volunteer',
-        is_verified: true,
       });
       assert.equal(route, '/dashboard/volunteer');
     });

@@ -41,6 +41,12 @@ class MockAuthSupabaseClient {
       is_verified: true,
       display_name: 'Active Donor',
     });
+    this.profiles.set('legacy-donor-user-id', {
+      id: 'legacy-donor-user-id',
+      role: 'donor',
+      is_verified: false,
+      display_name: 'Legacy Donor',
+    });
     // Seed default volunteer profile
     this.profiles.set('vol-user-id', {
       id: 'vol-user-id',
@@ -87,6 +93,11 @@ class MockAuthSupabaseClient {
       }
       if (email === 'donor@example.com' && password === 'ValidPassword123!') {
         const user = { id: 'donor-user-id', email };
+        this.activeUser = user;
+        return { data: { user, session: { access_token: 'mock-token' } }, error: null };
+      }
+      if (email === 'legacy-donor@example.com' && password === 'ValidPassword123!') {
+        const user = { id: 'legacy-donor-user-id', email };
         this.activeUser = user;
         return { data: { user, session: { access_token: 'mock-token' } }, error: null };
       }
@@ -346,6 +357,21 @@ describe('Supabase Email & Password Authentication Suite', () => {
       assert.equal(res.profile?.role, 'donor');
       assert.equal(res.redirectUrl, '/dashboard/donor');
       assert.equal(res.roleMismatch, false);
+    });
+
+    it('routes a canonical donor regardless of legacy verification status', async () => {
+      const mockClient = new MockAuthSupabaseClient();
+      const res = await signInWithPassword(
+        {
+          email: 'legacy-donor@example.com',
+          password: 'ValidPassword123!',
+          portalRole: 'donor',
+        },
+        mockClient
+      );
+
+      assert.equal(res.profile?.isVerified, false);
+      assert.equal(res.redirectUrl, '/dashboard/donor');
     });
 
     it('routes requester to /dashboard/beneficiary', async () => {

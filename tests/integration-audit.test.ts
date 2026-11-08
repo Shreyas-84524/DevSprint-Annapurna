@@ -20,37 +20,37 @@ describe('Integration boundary suite', () => {
       assert.equal(payload.error.code, 'AUTH_CONFIGURATION_UNAVAILABLE');
     });
 
-    it('sends valid unverified donors and requesters to onboarding', () => {
+    it('allows matching canonical roles regardless of legacy verification status', () => {
       assert.equal(
         getProtectedRouteRedirect('/dashboard/donor', {
           role: 'donor',
           is_verified: false,
         }),
-        '/onboarding'
+        null
       );
       assert.equal(
         getProtectedRouteRedirect('/dashboard/beneficiary', {
           role: 'requester',
           is_verified: false,
         }),
-        '/onboarding'
+        null
       );
     });
 
-    it('allows only verified users into the matching donor/requester dashboard', () => {
+    it('still prevents cross-role dashboard access', () => {
       assert.equal(
         getProtectedRouteRedirect('/dashboard/donor', {
-          role: 'donor',
-          is_verified: true,
-        }),
-        null
-      );
-      assert.equal(
-        getProtectedRouteRedirect('/dashboard/beneficiary', {
           role: 'requester',
           is_verified: true,
         }),
-        null
+        '/dashboard/beneficiary'
+      );
+      assert.equal(
+        getProtectedRouteRedirect('/dashboard/beneficiary', {
+          role: 'donor',
+          is_verified: true,
+        }),
+        '/dashboard/donor'
       );
     });
   });
