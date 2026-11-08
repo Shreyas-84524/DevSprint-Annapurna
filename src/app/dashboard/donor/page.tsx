@@ -17,6 +17,10 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { FoodType, ListingDTO, ListingStatus, FOOD_TYPES } from "@/types/contracts";
+import {
+  getDonorListingsErrorMessage,
+  parseDonorListingsResponse,
+} from "./listingReadModel";
 
 interface FormState {
   title: string;
@@ -94,52 +98,53 @@ export default function DonorDashboard() {
       }
     } catch (err) {
       console.error("Failed to load user profile:", err);
-      setIsOffline(true);
+      setIsOffline(typeof navigator !== "undefined" && !navigator.onLine);
     }
   }, [supabase]);
 
-  // Re-fetch canonical listings from database (RLS ensures donor only sees their own)
+  // Fetch the authenticated donor projection through the server authorization boundary.
   const fetchMyListings = useCallback(async () => {
     setIsLoading(true);
     setErrorMessage(null);
     try {
-      const { data, error } = await supabase
-        .from("food_listings")
-        .select("*")
-        .order("created_at", { ascending: false });
+      const res = await fetch("/api/listings?mine=true", {
+        method: "GET",
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      const payload: unknown = await res.json().catch(() => null);
 
-      if (error) {
-        throw error;
+      if (!res.ok) {
+        setIsOffline(false);
+        setErrorMessage(getDonorListingsErrorMessage(res.status, payload));
+        return;
       }
 
-      const mapped: ListingDTO[] = (data || []).map((row: any) => ({
-        id: row.id,
-        donorId: row.donor_id,
-        title: row.title,
-        description: row.description,
-        quantity: Number(row.quantity),
-        unit: row.unit,
-        foodType: row.food_type as FoodType,
-        dietaryTags: row.dietary_tags || [],
-        status: row.status as ListingStatus,
-        expiresAt: row.expires_at,
-        pickupLocationId: row.pickup_location_id,
-        generalArea: row.general_area,
-        rowVersion: row.row_version,
-        createdAt: row.created_at,
-        updatedAt: row.updated_at,
-      }));
+      let parsedListings: ListingDTO[];
+      try {
+        parsedListings = parseDonorListingsResponse(payload);
+      } catch (contractError) {
+        console.error("Invalid donor listings response:", contractError);
+        setIsOffline(false);
+        setErrorMessage("The listing service returned an invalid response. Please try again.");
+        return;
+      }
 
-      setListings(mapped);
+      setListings(parsedListings);
       setIsOffline(false);
-    } catch (err: any) {
+    } catch (err) {
       console.error("Failed to fetch listings:", err);
-      setErrorMessage("Could not load listings. Please check your network connection and retry.");
-      setIsOffline(true);
+      const offline = typeof navigator !== "undefined" && !navigator.onLine;
+      setIsOffline(offline);
+      setErrorMessage(
+        offline
+          ? "You are offline. Reconnect to load your food listings."
+          : "Could not reach the listing service. Please try again."
+      );
     } finally {
       setIsLoading(false);
     }
-  }, [supabase]);
+  }, []);
 
   useEffect(() => {
     loadUserAndProfile();
