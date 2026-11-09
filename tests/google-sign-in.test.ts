@@ -146,7 +146,7 @@ describe("Google Sign-In Frontend Suite", () => {
 
     it("presents friendly generic error on Supabase initiation failure and allows retry", async () => {
       let callCount = 0;
-      let capturedError: string | null = null;
+      let capturedError: any = null;
 
       const failingSupabase = {
         auth: {
@@ -189,7 +189,7 @@ describe("Google Sign-In Frontend Suite", () => {
     });
 
     it("handles exceptions gracefully without logging secrets or credentials", async () => {
-      let capturedError: string | null = null;
+      let capturedError: any = null;
       let loading = false;
 
       const throwingSupabase = {
