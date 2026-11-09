@@ -99,7 +99,7 @@ export default function OnboardingPage() {
         const json = await res.json();
         const me = json?.data;
         if (me?.onboardingComplete) {
-          router.replace(me.dashboardRoute || "/");
+          window.location.replace(me.dashboardRoute || "/");
           return;
         }
 
@@ -268,11 +268,11 @@ export default function OnboardingPage() {
           if (meRes.ok) {
             const meJson = await meRes.json();
             if (meJson?.data?.onboardingComplete) {
-              router.replace(meJson.data.dashboardRoute);
+              window.location.replace(meJson.data.dashboardRoute);
               return;
             }
           }
-          router.replace(
+          window.location.replace(
             selectedRole === "donor"
               ? "/dashboard/donor"
               : selectedRole === "requester"
@@ -292,7 +292,7 @@ export default function OnboardingPage() {
           ? "/dashboard/beneficiary"
           : "/dashboard/volunteer");
 
-      router.replace(destination);
+      window.location.replace(destination);
     } catch (err: any) {
       setGeneralError(err.message || "An unexpected error occurred while saving profile.");
     } finally {

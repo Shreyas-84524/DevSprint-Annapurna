@@ -15,6 +15,7 @@
  */
 
 import { createClient as createServerSupabaseClient } from "@/lib/supabase-server";
+import { createClient as createApiClient } from "@supabase/supabase-js";
 import {
   SignupRequest,
   SignupResponseData,
@@ -165,8 +166,37 @@ export async function signUpWithPassword(
     throw new PasswordAuthError("Account creation failed. Please try again.", "SIGNUP_FAILED", 500);
   }
 
-  const hasSession = !!authData.session;
-  const emailConfirmationRequired = !hasSession && (!user.identities || user.identities.length === 0 || !user.confirmed_at);
+  let hasSession = !!authData.session;
+  let emailConfirmationRequired =
+    !hasSession && (!user.identities || user.identities.length === 0 || !user.confirmed_at);
+
+  // Auto-confirm user when service role key is configured to prevent broken confirmation email redirects
+  if (
+    emailConfirmationRequired &&
+    process.env.SUPABASE_SERVICE_ROLE_KEY &&
+    process.env.NEXT_PUBLIC_SUPABASE_URL
+  ) {
+    try {
+      const adminClient = createApiClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL,
+        process.env.SUPABASE_SERVICE_ROLE_KEY,
+        { auth: { persistSession: false, autoRefreshToken: false } }
+      );
+      await adminClient.auth.admin.updateUserById(user.id, { email_confirm: true });
+      emailConfirmationRequired = false;
+
+      // Automatically sign in the user to establish the SSR session cookie immediately
+      const { data: loginData } = await serverClient.auth.signInWithPassword({
+        email: normalizedEmail,
+        password: input.password,
+      });
+      if (loginData?.session) {
+        hasSession = true;
+      }
+    } catch (err) {
+      console.warn("Auto-confirm / sign-in on signup fallback:", err);
+    }
+  }
 
   return {
     user: {
@@ -219,11 +249,71 @@ export async function signInWithPassword(
   const user = authData.user;
 
   // Resolve authoritative profile from public.profiles
-  const { data: profile } = await serverClient
-    .from("profiles")
-    .select("id, role, is_verified, display_name")
-    .eq("id", user.id)
-    .maybeSingle();
+  let profile: any = null;
+
+  if (customClient) {
+    const { data } = await customClient
+      .from("profiles")
+      .select("id, role, is_verified, display_name")
+      .eq("id", user.id)
+      .maybeSingle();
+    profile = data;
+  } else {
+    // When signing in server-side, query with user's access token or service role key
+    // so that PostgREST RLS policy (auth.uid() = id) is satisfied immediately.
+    const accessToken = authData.session?.access_token;
+    if (accessToken && process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+      try {
+        const authQueryClient = createApiClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL,
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+          {
+            global: {
+              headers: {
+                Authorization: `Bearer ${accessToken}`,
+              },
+            },
+            auth: { persistSession: false, autoRefreshToken: false },
+          }
+        );
+        const { data } = await authQueryClient
+          .from("profiles")
+          .select("id, role, is_verified, display_name")
+          .eq("id", user.id)
+          .maybeSingle();
+        profile = data;
+      } catch {
+        // Fallback
+      }
+    }
+
+    if (!profile && process.env.SUPABASE_SERVICE_ROLE_KEY && process.env.NEXT_PUBLIC_SUPABASE_URL) {
+      try {
+        const adminClient = createApiClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL,
+          process.env.SUPABASE_SERVICE_ROLE_KEY,
+          { auth: { persistSession: false, autoRefreshToken: false } }
+        );
+        const { data } = await adminClient
+          .from("profiles")
+          .select("id, role, is_verified, display_name")
+          .eq("id", user.id)
+          .maybeSingle();
+        profile = data;
+      } catch {
+        // Fallback
+      }
+    }
+
+    if (!profile) {
+      const { data } = await serverClient
+        .from("profiles")
+        .select("id, role, is_verified, display_name")
+        .eq("id", user.id)
+        .maybeSingle();
+      profile = data;
+    }
+  }
 
   // If user signed in at /login/admin, strictly verify they hold the canonical admin role
   if (input.portalRole === "admin") {

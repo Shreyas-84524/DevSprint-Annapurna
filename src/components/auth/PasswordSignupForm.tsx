@@ -96,7 +96,7 @@ export function PasswordSignupForm({ initialRole }: PasswordSignupFormProps) {
         );
       } else {
         const dest = json.data?.redirectUrl || "/onboarding";
-        router.push(dest);
+        window.location.replace(dest);
       }
     } catch {
       setError("Network error. Please check your internet connection and try again.");
