@@ -15,6 +15,7 @@ import {
 import Link from "next/link";
 import { UserRole } from "@/types/contracts";
 import { resolvePostAuthDestination } from "@/components/auth/authNavigation";
+import { GoogleSignInButton } from "@/components/auth/GoogleSignInButton";
 
 export interface PasswordLoginFormProps {
   portalRole: UserRole;
@@ -44,15 +45,32 @@ export function PasswordLoginForm({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
   useEffect(() => {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
       const queryError = params.get("error");
-      if (queryError) {
-        if (queryError.toLowerCase().includes("expired") || queryError.toLowerCase().includes("invalid")) {
-          setError("Your verification link has expired or was already used. You can sign in directly with your email and password below.");
+      const errorDescription = params.get("error_description");
+      const errorMsg = queryError || errorDescription;
+      if (errorMsg) {
+        const lower = errorMsg.toLowerCase();
+        if (
+          lower.includes("access_denied") ||
+          lower.includes("cancel") ||
+          lower.includes("cancelled") ||
+          lower.includes("canceled")
+        ) {
+          setError(
+            "Google sign-in was canceled. Please try again or sign in with your email and password."
+          );
+        } else if (lower.includes("expired") || lower.includes("invalid")) {
+          setError(
+            "Your verification link has expired or was already used. You can sign in directly with your email and password below."
+          );
         } else {
-          setError(queryError);
+          setError(
+            "Unable to complete sign-in. Please try again or sign in with your email and password."
+          );
         }
       }
     }
@@ -137,7 +155,7 @@ export function PasswordLoginForm({
           </span>
           <div className="flex items-center text-xs text-gray-500">
             <ShieldCheck className="w-3.5 h-3.5 mr-1 text-brand-eco" aria-hidden="true" />
-            <span>Secure Password Sign In</span>
+            <span>Secure Sign In</span>
           </div>
         </div>
         <div className="flex items-center gap-3 mt-1">
@@ -178,6 +196,29 @@ export function PasswordLoginForm({
           >
             <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" aria-hidden="true" />
             <div className="flex-1 font-medium">{notice}</div>
+          </div>
+        )}
+
+        {/* Google Sign In (Public roles only: donor, requester, volunteer; never admin) */}
+        {portalRole !== "admin" && (
+          <div className="mb-6">
+            <GoogleSignInButton
+              portalRole={portalRole}
+              disabled={loading}
+              onError={(msg) => setError(msg)}
+            />
+
+            {/* Visual separator */}
+            <div className="relative my-6" aria-hidden="true">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-gray-200" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-white px-3 text-gray-400 font-bold tracking-wider">
+                  or continue with email
+                </span>
+              </div>
+            </div>
           </div>
         )}
 
